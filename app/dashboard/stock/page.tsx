@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/components/ui/use-toast"
 import { AlertTriangle, Calendar, Edit, Package, Search, TrendingDown, TrendingUp } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { fetchWithAuth } from "@/lib/api";
 
 type StockItem = {
   id: number
@@ -32,7 +33,6 @@ type StockItem = {
   fechaVencimiento: string
   laboratorio: string
   categoria: string
-  // lote?: string // Elimínalo si tu backend no lo da
 }
 
 export default function StockPage() {
@@ -41,12 +41,15 @@ export default function StockPage() {
   const [editandoStock, setEditandoStock] = useState<StockItem | null>(null)
   const { toast } = useToast()
 
-  // Cargar stock y productos desde backend
+  // Cargar stock desde backend Spring Boot directamente (manejo robusto de JSON)
   useEffect(() => {
-    fetch("/api/stock")
-      .then(res => res.json())
-      .then((data) => setStock(data))
-  }, [])
+  fetchWithAuth("http://51.161.10.179:8080/api/stock")
+    .then((data) => setStock(data || []))
+    .catch(err => {
+      console.error(err);
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    });
+}, [toast]);
 
   const stockFiltrado = stock.filter(
     (item) =>
@@ -78,7 +81,7 @@ export default function StockPage() {
       })
       return
     }
-    const res = await fetch(`/api/stock/${editandoStock.id}`, {
+    const res = await fetch(`http://51.161.10.179:8080/api/stock/${editandoStock.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -90,7 +93,14 @@ export default function StockPage() {
     })
     if (res.ok) {
       toast({ title: "Stock actualizado", description: "Los cambios se han guardado correctamente" })
-      fetch("/api/stock").then(res => res.json()).then(data => setStock(data))
+      // Recarga stock después de editar
+      fetch("http://51.161.10.179:8080/api/stock")
+        .then(async res => {
+          const text = await res.text();
+          if (!text) return [];
+          try { return JSON.parse(text) } catch { return [] }
+        })
+        .then(data => setStock(data));
       setEditandoStock(null)
     } else {
       toast({ title: "Error", description: "No se pudo actualizar el stock", variant: "destructive" })
@@ -109,7 +119,6 @@ export default function StockPage() {
     const hoy = new Date()
     return Math.ceil((fecha.getTime() - hoy.getTime()) / (1000 * 3600 * 24))
   }
-
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">

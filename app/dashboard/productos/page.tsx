@@ -17,8 +17,10 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useToast } from "@/components/ui/use-toast"
+
 import { Edit, Plus, Search, Trash2 } from "lucide-react"
+import { fetchWithAuth } from "@/lib/api"
+import { useToast } from "@/hooks/use-toast"
 
 type StockLote = {
   cantidadUnidades: number
@@ -33,14 +35,14 @@ type Producto = {
   concentracion: string
   cantidad_general: number
   precio_venta_und: number
-  descuento: number
+  descuento: number // ahora será el "precio con descuento"
   laboratorio: string
   categoria: string
   fecha_creacion?: string
   stocks?: StockLote[]
 }
 
-const BACKEND_URL = "http://localhost:8080"
+const BACKEND_URL = "http://51.161.10.179:8080"
 
 export default function ProductosPage() {
   const [productos, setProductos] = useState<Producto[]>([])
@@ -51,7 +53,7 @@ export default function ProductosPage() {
     concentracion: "",
     cantidad_general: "",
     precio_venta_und: "",
-    descuento: "",
+    descuento: "", // aquí el precio con descuento
     laboratorio: "",
     categoria: "",
     stocks: [] as StockLote[],
@@ -66,33 +68,32 @@ export default function ProductosPage() {
   const [loteEnEdicion, setLoteEnEdicion] = useState<StockLote | null>(null)
   const { toast } = useToast()
 
-
   // Cargar productos al iniciar
   const cargarProductos = () => {
-    fetch("/api/productos")
-      .then(res => {
-        if (!res.ok) throw new Error();
-        return res.json();
-      })
-      .then(data => {
-        const productosAdaptados = data.map((prod: any) => ({
-          id: prod.id,
-          codigo_barras: prod.codigoBarras,
-          nombre: prod.nombre,
-          concentracion: prod.concentracion,
-          cantidad_general: prod.cantidadGeneral,
-          precio_venta_und: prod.precioVentaUnd,
-          descuento: prod.descuento,
-          laboratorio: prod.laboratorio,
-          categoria: prod.categoria,
-          fecha_creacion: prod.fechaCreacion,
-          fecha_actualizacion: prod.fechaActualizacion,
-          stocks: prod.stocks || [],
-        }));
-        setProductos(productosAdaptados);
-      })
-      .catch(() => toast({ title: "Error", description: "No se pudo cargar productos", variant: "destructive" }));
-  };
+  fetchWithAuth(BACKEND_URL + "/productos")
+    .then(data => {
+      
+      const productosAdaptados = data.map((prod: any) => ({
+        id: prod.id,
+        codigo_barras: prod.codigoBarras,
+        nombre: prod.nombre,
+        concentracion: prod.concentracion,
+        cantidad_general: prod.cantidadGeneral,
+        precio_venta_und: prod.precioVentaUnd,
+        descuento: prod.descuento,
+        laboratorio: prod.laboratorio,
+        categoria: prod.categoria,
+        fecha_creacion: prod.fechaCreacion,
+        fecha_actualizacion: prod.fechaActualizacion,
+        stocks: prod.stocks || [],
+      }));
+      setProductos(productosAdaptados);
+    })
+    .catch((err) => {
+      console.error("Error al cargar productos:", err);
+      toast({ title: "Error", description: "No se pudo cargar productos", variant: "destructive" });
+    });
+};
 
   useEffect(() => {
     cargarProductos()
@@ -105,50 +106,46 @@ export default function ProductosPage() {
       (producto.categoria || "").toLowerCase().includes(busqueda.toLowerCase()) ||
       (producto.laboratorio || "").toLowerCase().includes(busqueda.toLowerCase()),
   )
-
-  // AGREGAR PRODUCTO
   const agregarProducto = async () => {
-    if (!nuevoProducto.codigo_barras || !nuevoProducto.nombre || !nuevoProducto.precio_venta_und) {
-      toast({
-        title: "Error",
-        description: "Completa los campos obligatorios",
-        variant: "destructive",
-      })
-      return
-    }
-    if (productos.some(p => p.codigo_barras === nuevoProducto.codigo_barras)) {
-      toast({
-        title: "Error",
-        description: "Ya existe un producto con ese código de barras",
-        variant: "destructive",
-      })
-      return
-    }
-
-    // Adaptar lotes a formato backend
     const stocks = (nuevoProducto.stocks || []).map(lote => ({
       cantidadUnidades: Number(lote.cantidadUnidades) || 0,
       fechaVencimiento: lote.fechaVencimiento,
       precioCompra: Number(lote.precioCompra) || 0,
-    }))
+    }));
 
-    const res = await fetch("/api/productos/nuevo", {
+    const precioConDescuento = Number(nuevoProducto.descuento) || 0;
+
+    const data = await fetchWithAuth(BACKEND_URL + "/productos/nuevo", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         codigoBarras: nuevoProducto.codigo_barras,
         nombre: nuevoProducto.nombre,
         concentracion: nuevoProducto.concentracion,
-        cantidadGeneral: stocks.reduce((sum: number, lote: StockLote) => sum + Number(lote.cantidadUnidades), 0),
+        cantidadGeneral: stocks.reduce(
+          (sum: number, lote: StockLote) => sum + Number(lote.cantidadUnidades),
+          0
+        ),
         precioVentaUnd: Number(nuevoProducto.precio_venta_und),
-        descuento: Number(nuevoProducto.descuento) || 0,
+        descuento: precioConDescuento,
         laboratorio: nuevoProducto.laboratorio,
         categoria: nuevoProducto.categoria,
         stocks,
       }),
     });
-    if (res.ok) {
-      toast({ title: "Producto agregado", description: "El producto se ha agregado correctamente" })
+
+    if (data) {
+      if (data.reactivado) {
+        toast({
+          title: "Producto restaurado",
+          description: "El producto fue reactivado y actualizado."
+        });
+      } else {
+        toast({
+          title: "Producto agregado",
+          description: "El producto se ha agregado correctamente"
+        });
+      }
       setNuevoProducto({
         codigo_barras: "",
         nombre: "",
@@ -159,18 +156,21 @@ export default function ProductosPage() {
         laboratorio: "",
         categoria: "",
         stocks: [],
-      })
+      });
       setNuevoLote({
         cantidadUnidades: 0,
         fechaVencimiento: "",
         precioCompra: 0,
-      })
-      cargarProductos()
+      });
+      cargarProductos();
     } else {
-      const error = await res.text()
-      toast({ title: "Error", description: error || "No se pudo agregar el producto", variant: "destructive" })
+      toast({
+        title: "Error",
+        description: "No se pudo agregar el producto",
+        variant: "destructive"
+      });
     }
-  }
+  };
 
   // GESTIÓN DE LOTES - NUEVO PRODUCTO
   const agregarLoteANuevo = () => {
@@ -254,13 +254,13 @@ export default function ProductosPage() {
       })
       return
     }
-    // Adaptar lotes
     const stocks = (editandoProducto.stocks || []).map((lote: StockLote) => ({
       cantidadUnidades: Number(lote.cantidadUnidades) || 0,
       fechaVencimiento: lote.fechaVencimiento,
       precioCompra: Number(lote.precioCompra) || 0,
     }))
-    const res = await fetch(`${BACKEND_URL}/productos/${editandoProducto.codigo_barras}`, {
+    const precioConDescuento = Number(editandoProducto.descuento) || 0
+    const res = await fetchWithAuth(`${BACKEND_URL}/productos/${editandoProducto.codigo_barras}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -269,33 +269,38 @@ export default function ProductosPage() {
         concentracion: editandoProducto.concentracion,
         cantidadGeneral: stocks.reduce((sum: number, lote: StockLote) => sum + Number(lote.cantidadUnidades), 0),
         precioVentaUnd: Number(editandoProducto.precio_venta_und),
-        descuento: Number(editandoProducto.descuento) || 0,
+        descuento: precioConDescuento,
         laboratorio: editandoProducto.laboratorio,
         categoria: editandoProducto.categoria,
         stocks,
       }),
     })
-    if (res.ok) {
+    if (res) {
       toast({ title: "Producto actualizado", description: "Los cambios se han guardado correctamente" })
       setEditandoProducto(null)
       setLoteEnEdicion(null)
       setEditLoteIndex(null)
       cargarProductos()
     } else {
-      const error = await res.text()
-      toast({ title: "Error", description: error || "No se pudo actualizar el producto", variant: "destructive" })
+      toast({ title: "Error", description: "No se pudo actualizar el producto", variant: "destructive" })
     }
   }
 
-  // ELIMINAR PRODUCTO
+  // ELIMINAR PRODUCTO (borrado lógico)
   const eliminarProducto = async (codigo_barras: string) => {
-    const res = await fetch(`${BACKEND_URL}/productos/${codigo_barras}`, { method: "DELETE" })
-    if (res.ok) {
-      toast({ title: "Producto eliminado", description: "El producto se ha eliminado correctamente" })
-      cargarProductos()
-    } else {
-      toast({ title: "Error", description: "No se pudo eliminar el producto", variant: "destructive" })
+    try {
+      await fetchWithAuth(`${BACKEND_URL}/productos/${codigo_barras}`, { method: "DELETE" });
+      toast({ title: "Producto eliminado", description: "El producto se ha eliminado correctamente" });
+      cargarProductos();
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.message || "No se pudo eliminar el producto", variant: "destructive" });
     }
+  }
+
+  // Calcula el descuento en % solo para mostrar
+  function calcularDescuentoPorcentaje(precio: number, precioConDescuento: number) {
+    if (!precio || !precioConDescuento || precioConDescuento >= precio) return 0
+    return Math.round((100 * (precio - precioConDescuento)) / precio)
   }
 
   return (
@@ -459,12 +464,12 @@ export default function ProductosPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="descuento">Descuento (%)</Label>
+                    <Label htmlFor="descuento">Precio con descuento</Label>
                     <Input
                       id="descuento"
                       type="number"
                       step="0.01"
-                      placeholder="0"
+                      placeholder="0.00"
                       value={nuevoProducto.descuento}
                       onChange={(e) => setNuevoProducto({ ...nuevoProducto, descuento: e.target.value })}
                     />
@@ -541,7 +546,14 @@ export default function ProductosPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {producto.descuento > 0 ? <Badge variant="outline">{producto.descuento}%</Badge> : "-"}
+                      {/* Mostrar porcentaje calculado */}
+                      {producto.descuento > 0 && producto.descuento < producto.precio_venta_und ? (
+                        <Badge variant="outline">
+                          {calcularDescuentoPorcentaje(Number(producto.precio_venta_und), Number(producto.descuento))}%
+                        </Badge>
+                      ) : (
+                        "-"
+                      )}
                     </TableCell>
                     <TableCell>
                       {(producto.stocks?.length ?? 0) > 0 ? (
@@ -733,7 +745,7 @@ export default function ProductosPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-descuento">Descuento (%)</Label>
+                  <Label htmlFor="edit-descuento">Precio con descuento</Label>
                   <Input
                     id="edit-descuento"
                     type="number"

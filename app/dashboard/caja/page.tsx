@@ -32,7 +32,7 @@ type Usuario = {
 
 type CajaResumen = {
   efectivo: number
-  totalYape: number // <-- Usar el nombre exacto del backend
+  totalYape: number
   ingresos: number
   egresos: number
   efectivoInicial: number
@@ -69,6 +69,31 @@ type HistorialCaja = {
   usuarioResponsable: string
 }
 
+// Útil para fetchs autenticados
+async function fetchWithToken(url: string, options: RequestInit = {}): Promise<any> {
+  const token = localStorage.getItem("token");
+  const headers: HeadersInit = {
+    ...(options.headers || {}),
+    Authorization: token ? `Bearer ${token}` : "",
+    "Content-Type": "application/json",
+  };
+  const res = await fetch(url, { ...options, headers, credentials: "include" });
+
+  // Si la respuesta es 204 No Content, retorna null
+  if (res.status === 204) return null;
+
+  // Si esperas JSON
+  const contentType = res.headers.get("content-type");
+  if (contentType && contentType.includes("application/json")) {
+    return await res.json();
+  }
+
+  // Si esperas texto plano (por ejemplo, en /movimiento)
+  const text = await res.text();
+  if (text) return text;
+
+  return null;
+}
 export default function CajaPage() {
   const [cajaAbierta, setCajaAbierta] = useState(false)
   const [efectivoInicial, setEfectivoInicial] = useState("")
@@ -85,44 +110,28 @@ export default function CajaPage() {
   const [alertaCajaAbierta, setAlertaCajaAbierta] = useState(false)
   const { toast } = useToast()
 
-  // Obtener usuario de sesión
+  // Cargar usuario desde el contexto o sesión
   useEffect(() => {
-    fetch("/api/auth/session")
-      .then(res => {
-        if (!res.ok) throw new Error("No autenticado")
-        return res.json()
-      })
-      .then(data => {
-        setUsuario(data.user || data.usuario)
-      })
-      .catch((e) => {
+    if (typeof window === "undefined") return;
+    const storedUsuario = localStorage.getItem("usuario")
+    if (storedUsuario) {
+      try {
+        const parsedUsuario = JSON.parse(storedUsuario) as Usuario
+        setUsuario(parsedUsuario)
+      } catch (error) {
+        console.error("Error al parsear usuario desde localStorage:", error)
         setUsuario(null)
-        console.error("Error cargando usuario de sesión:", e)
-      })
+      }
+    } else {
+      setUsuario(null)
+    }
   }, [])
 
   // Cargar datos de caja al iniciar
   useEffect(() => {
     if (!usuario) return
-    fetch(`/api/cajas/actual?dniUsuario=${usuario.dni}`, { credentials: "include" })
-      .then(async res => {
-        if (!res.ok) {
-          const text = await res.text()
-          console.warn("Error HTTP en /api/cajas/actual:", res.status, text)
-          return null
-        }
-        const text = await res.text()
-        if (!text) {
-          return null
-        }
-        try {
-          return JSON.parse(text)
-        } catch (err) {
-          console.error("Error parseando JSON de /api/cajas/actual:", err, text)
-          return null
-        }
-      })
-      .then(data => {
+    fetchWithToken(`http://51.161.10.179:8080/api/cajas/actual?dniUsuario=${usuario.dni}`)
+      .then((data) => {
         if (!data) {
           setResumen(null)
           setCajaAbierta(false)
@@ -161,28 +170,15 @@ export default function CajaPage() {
 
   // Cargar historial de cajas
   useEffect(() => {
-    fetch("/api/cajas/historial", { credentials: "include" })
-      .then(async res => {
-        if (!res.ok) {
-          console.warn("Error HTTP al consultar historial:", res.status)
-          return []
-        }
-        try {
-          return await res.json()
-        } catch {
-          return []
-        }
-      })
+    fetchWithToken("http://51.161.10.179:8080/api/cajas/historial")
       .then(setHistorial)
       .catch(() => setHistorial([]))
   }, [])
 
   // Chequear si hay otra caja abierta para alerta global
   useEffect(() => {
-    fetch("/api/cajas/abiertas", { credentials: "include" })
-      .then(async res => {
-        if (!res.ok) return setAlertaCajaAbierta(false)
-        const cajas = await res.json()
+    fetchWithToken("http://51.161.10.179:8080/api/cajas/abiertas")
+      .then((cajas) => {
         setAlertaCajaAbierta(Array.isArray(cajas) && cajas.length > 0)
       })
       .catch(() => setAlertaCajaAbierta(false))
@@ -219,25 +215,13 @@ export default function CajaPage() {
       return
     }
     try {
-      const res = await fetch("/api/cajas/abrir", {
+      const data = await fetchWithToken("http://51.161.10.179:8080/api/cajas/abrir", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           dniUsuario: usuario.dni,
           efectivoInicial: Number.parseFloat(efectivoInicial)
         }),
-        credentials: "include"
-      })
-      if (!res.ok) {
-        const text = await res.text()
-        toast({
-          title: "No se pudo abrir la caja",
-          description: text,
-          variant: "destructive"
-        })
-        return
-      }
-      const data = await res.json()
+      });
       setCajaAbierta(true)
       setResumen({
         efectivo: data.efectivo ?? 0,
@@ -289,65 +273,41 @@ export default function CajaPage() {
       return
     }
     try {
-      const res = await fetch("/api/cajas/cerrar", {
+      const data = await fetchWithToken("http://51.161.10.179:8080/api/cajas/cerrar", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           dniUsuario: usuario.dni,
           efectivoFinalDeclarado: Number.parseFloat(efectivoFinalDeclarado)
         }),
-        credentials: "include"
       })
-      if (res.ok) {
-        const data = await res.json()
-        setCajaAbierta(false)
-        toast({
-          title: "Caja cerrada",
-          description: "La caja ha sido cerrada correctamente",
+      setCajaAbierta(false)
+      toast({
+        title: "Caja cerrada",
+        description: "La caja ha sido cerrada correctamente",
+      })
+      // Refresca el resumen
+      fetchWithToken(`http://51.161.10.179:8080/api/cajas/actual?dniUsuario=${usuario.dni}`)
+        .then((data2) => {
+          setResumen(data2 ? {
+            efectivo: data2.efectivo ?? 0,
+            totalYape: data2.totalYape ?? 0,
+            ingresos: data2.ingresos ?? 0,
+            egresos: data2.egresos ?? 0,
+            efectivoInicial: data2.efectivoInicial ?? 0,
+            efectivoFinal: data2.efectivoFinal ?? 0,
+            cajaAbierta: !data2.fechaCierre,
+            ventasEfectivo: data2.ventasEfectivo ?? 0,
+            ventasYape: data2.ventasYape ?? 0,
+            ventasMixto: data2.ventasMixto ?? 0,
+            totalVentas: data2.totalVentas ?? 0,
+            movimientos: data2.movimientos ?? [],
+            diferencia: data2.diferencia ?? 0,
+            fechaApertura: data2.fechaApertura,
+            fechaCierre: data2.fechaCierre,
+            usuarioResponsable: data2.usuarioResponsable
+          } : null)
+          setEfectivoFinalDeclarado("")
         })
-        fetch(`/api/cajas/actual?dniUsuario=${usuario.dni}`)
-          .then(async res2 => {
-            if (!res2.ok) {
-              const text = await res2.text()
-              return null
-            }
-            const text = await res2.text()
-            if (!text) return null
-            try {
-              return JSON.parse(text)
-            } catch {
-              return null
-            }
-          })
-          .then(data2 => {
-            setResumen(data2 ? {
-              efectivo: data2.efectivo ?? 0,
-              totalYape: data2.totalYape ?? 0,
-              ingresos: data2.ingresos ?? 0,
-              egresos: data2.egresos ?? 0,
-              efectivoInicial: data2.efectivoInicial ?? 0,
-              efectivoFinal: data2.efectivoFinal ?? 0,
-              cajaAbierta: !data2.fechaCierre,
-              ventasEfectivo: data2.ventasEfectivo ?? 0,
-              ventasYape: data2.ventasYape ?? 0,
-              ventasMixto: data2.ventasMixto ?? 0,
-              totalVentas: data2.totalVentas ?? 0,
-              movimientos: data2.movimientos ?? [],
-              diferencia: data2.diferencia ?? 0,
-              fechaApertura: data2.fechaApertura,
-              fechaCierre: data2.fechaCierre,
-              usuarioResponsable: data2.usuarioResponsable
-            } : null)
-            setEfectivoFinalDeclarado("")
-          })
-      } else {
-        const text = await res.text()
-        toast({
-          title: "Error al cerrar caja",
-          description: text,
-          variant: "destructive",
-        })
-      }
     } catch (e) {
       toast({
         title: "Error al cerrar caja",
@@ -359,92 +319,72 @@ export default function CajaPage() {
 
   const agregarMovimiento = async () => {
     if (!nuevoMovimiento.tipo || !nuevoMovimiento.monto || !nuevoMovimiento.descripcion) {
-      toast({
-        title: "Error",
-        description: "Completa todos los campos del movimiento",
-        variant: "destructive",
-      })
-      return
-    }
+    toast({
+      title: "Error",
+      description: "Completa todos los campos del movimiento",
+      variant: "destructive",
+    });
+    return;
+  }
     if (!isValidMonto(nuevoMovimiento.monto)) {
-      toast({
-        title: "Error",
-        description: "El monto debe ser mayor a 0",
-        variant: "destructive",
-      })
-      return
-    }
-    if (!usuario || !usuario.dni) {
-      toast({
-        title: "Error",
-        description: "No se encontró el usuario en sesión",
-        variant: "destructive",
-      })
-      return
-    }
+    toast({
+      title: "Error",
+      description: "El monto debe ser mayor a 0",
+      variant: "destructive",
+    });
+    return;
+  }
+  if (!usuario || !usuario.dni) {
+    toast({
+      title: "Error",
+      description: "No se encontró el usuario en sesión",
+      variant: "destructive",
+    });
+    return;
+  }
     try {
-      const res = await fetch("/api/cajas/movimiento", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tipo: nuevoMovimiento.tipo,
-          monto: Number.parseFloat(nuevoMovimiento.monto),
-          descripcion: nuevoMovimiento.descripcion,
-          dniUsuario: usuario.dni,
-        }),
-      })
-      if (res.ok) {
-        toast({
-          title: "Movimiento agregado",
-          description: "El movimiento se ha registrado correctamente",
-        })
-        fetch(`/api/cajas/actual?dniUsuario=${usuario.dni}`)
-          .then(async res2 => {
-            if (!res2.ok) return null
-            const text = await res2.text()
-            if (!text) return null
-            try {
-              return JSON.parse(text)
-            } catch {
-              return null
-            }
-          })
-          .then(data2 => {
-            setMovimientos(data2?.movimientos ?? [])
-            setResumen(data2 ? {
-              efectivo: data2.efectivo ?? 0,
-              totalYape: data2.totalYape ?? 0,
-              ingresos: data2.ingresos ?? 0,
-              egresos: data2.egresos ?? 0,
-              efectivoInicial: data2.efectivoInicial ?? 0,
-              efectivoFinal: data2.efectivoFinal ?? 0,
-              cajaAbierta: !data2.fechaCierre,
-              ventasEfectivo: data2.ventasEfectivo ?? 0,
-              ventasYape: data2.ventasYape ?? 0,
-              ventasMixto: data2.ventasMixto ?? 0,
-              totalVentas: data2.totalVentas ?? 0,
-              movimientos: data2.movimientos ?? [],
-              diferencia: data2.diferencia ?? 0,
-              fechaApertura: data2.fechaApertura,
-              fechaCierre: data2.fechaCierre,
-              usuarioResponsable: data2.usuarioResponsable
-            } : null)
-          })
-        setNuevoMovimiento({ tipo: "", monto: "", descripcion: "" })
-      } else {
-        const text = await res.text()
-        toast({
-          title: "Error",
-          description: text,
-          variant: "destructive",
-        })
-      }
-    } catch (e) {
-      toast({
-        title: "Error",
-        description: "Error inesperado en la petición",
-        variant: "destructive",
-      })
+      await fetchWithToken("http://51.161.10.179:8080/api/cajas/movimiento", {
+      method: "POST",
+      body: JSON.stringify({
+        tipo: nuevoMovimiento.tipo,
+        monto: Number.parseFloat(nuevoMovimiento.monto),
+        descripcion: nuevoMovimiento.descripcion,
+        dniUsuario: usuario.dni,
+      }),
+    });
+    toast({
+      title: "Movimiento agregado",
+      description: "El movimiento se ha registrado correctamente",
+    });
+      // Refresca los movimientos y resumen
+      // Refresca movimientos y resumen (con await)
+    const data2 = await fetchWithToken(`http://51.161.10.179:8080/api/cajas/actual?dniUsuario=${usuario.dni}`);
+    setMovimientos(data2?.movimientos ?? []);
+    setResumen(data2 ? {
+      efectivo: data2.efectivo ?? 0,
+      totalYape: data2.totalYape ?? 0,
+      ingresos: data2.ingresos ?? 0,
+      egresos: data2.egresos ?? 0,
+      efectivoInicial: data2.efectivoInicial ?? 0,
+      efectivoFinal: data2.efectivoFinal ?? 0,
+      cajaAbierta: !data2.fechaCierre,
+      ventasEfectivo: data2.ventasEfectivo ?? 0,
+      ventasYape: data2.ventasYape ?? 0,
+      ventasMixto: data2.ventasMixto ?? 0,
+      totalVentas: data2.totalVentas ?? 0,
+      movimientos: data2.movimientos ?? [],
+      diferencia: data2.diferencia ?? 0,
+      fechaApertura: data2.fechaApertura,
+      fechaCierre: data2.fechaCierre,
+      usuarioResponsable: data2.usuarioResponsable
+    } : null);
+      setNuevoMovimiento({ tipo: "", monto: "", descripcion: "" });
+  } catch (e: any) {
+    toast({
+      title: "Error",
+      description: e?.message || "Error inesperado en la petición",
+      variant: "destructive",
+    });
     }
   }
 

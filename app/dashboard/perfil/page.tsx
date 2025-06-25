@@ -10,6 +10,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { User, Calendar, Shield } from "lucide-react"
+import { fetchWithAuth } from "@/lib/api" // <-- Usa tu función aquí
 
 export default function PerfilPage() {
   const { user } = useAuth()
@@ -31,57 +32,52 @@ export default function PerfilPage() {
       })()
     : "US";
 
-  // Cargar datos reales desde el backend (Next.js route protegido)
+  // Cargar datos reales desde el backend (protegido, con token)
   useEffect(() => {
     async function fetchUser() {
       try {
-        const res = await fetch("/api/perfil", { credentials: "include" });
-        if (res.ok) {
-          const data = await res.json()
-          setDatosPersonales({
-            nombre_completo: data.nombreCompleto ?? "",
-            horario_entrada: data.horarioEntrada ?? "",
-            horario_salida: data.horarioSalida ?? "",
-            turno: data.turno ?? "",
-            rol: data.rol ?? "",
-          })
-        } else if (res.status === 401) {
+        const data = await fetchWithAuth("http://51.161.10.179:8080/usuarios/me")
+        setDatosPersonales({
+          nombre_completo: data.nombreCompleto ?? "",
+          horario_entrada: data.horarioEntrada ?? "",
+          horario_salida: data.horarioSalida ?? "",
+          turno: data.turno ?? "",
+          rol: data.rol ?? "",
+        })
+      } catch (error: any) {
+        if (error.message.includes("401")) {
           toast({ title: "Sesión expirada", description: "Debes volver a iniciar sesión", variant: "destructive" });
         } else {
           toast({ title: "Error", description: "No se pudo cargar el perfil", variant: "destructive" });
         }
-      } catch (error) {
-        toast({ title: "Error", description: "No se pudo cargar el perfil", variant: "destructive" })
       }
     }
     fetchUser()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.dni])
 
-  // Guardar cambios usando el route protegido
+  // Guardar cambios usando el backend protegido
   const guardarCambios = async () => {
     try {
-      const res = await fetch("/api/perfil", {
+      await fetchWithAuth("http://51.161.10.179:8080/usuarios/me", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({
-          nombre_completo: datosPersonales.nombre_completo,
-          horario_entrada: datosPersonales.horario_entrada,
-          horario_salida: datosPersonales.horario_salida,
+          nombreCompleto: datosPersonales.nombre_completo,
+          horarioEntrada: datosPersonales.horario_entrada,
+          horarioSalida: datosPersonales.horario_salida,
           turno: datosPersonales.turno,
           rol: datosPersonales.rol,
         }),
+        headers: { "Content-Type": "application/json" },
       })
-      if (res.ok) {
-        setEditando(false)
-        toast({ title: "Perfil actualizado", description: "Los cambios se han guardado correctamente" })
-      } else if (res.status === 401) {
+      setEditando(false)
+      toast({ title: "Perfil actualizado", description: "Los cambios se han guardado correctamente" })
+    } catch (error: any) {
+      if (error.message.includes("401")) {
         toast({ title: "Sesión expirada", description: "Debes volver a iniciar sesión", variant: "destructive" });
       } else {
         toast({ title: "Error", description: "No se pudo actualizar", variant: "destructive" })
       }
-    } catch (error) {
-      toast({ title: "Error", description: "No se pudo actualizar", variant: "destructive" })
     }
   }
 

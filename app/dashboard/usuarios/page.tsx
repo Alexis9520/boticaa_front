@@ -44,6 +44,20 @@ type Usuario = {
   horario_salida: string
 }
 
+function getToken() {
+  return typeof window !== "undefined" ? localStorage.getItem("token") : null
+}
+
+async function fetchConAuth(input: RequestInfo, init: RequestInit = {}) {
+  const token = getToken()
+  if (!token) throw new Error("Sesión expirada o no autenticada")
+  const headers = {
+    ...(init.headers || {}),
+    Authorization: `Bearer ${token}`,
+  }
+  return fetch(input, { ...init, headers })
+}
+
 export default function UsuariosPage() {
   const { toast } = useToast()
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
@@ -115,7 +129,7 @@ export default function UsuariosPage() {
 
     setIsEnviando(true)
     try {
-      const res = await fetch("/api/auth/register", {
+      const res = await fetchConAuth("http://51.161.10.179:8080/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -147,7 +161,7 @@ export default function UsuariosPage() {
         toast({ title: "Error", description: error.message || "No se pudo agregar el usuario", variant: "destructive" })
       }
     } catch (e) {
-      toast({ title: "Error", description: "Error de conexión con el servidor", variant: "destructive" })
+      toast({ title: "Error", description: (e as Error).message || "Error de conexión con el servidor", variant: "destructive" })
     } finally {
       setIsEnviando(false)
     }
@@ -169,7 +183,7 @@ export default function UsuariosPage() {
     }
 
     try {
-      const res = await fetch(`/api/usuarios/${editandoUsuario.id}`, {
+      const res = await fetchConAuth(`/api/usuarios/${editandoUsuario.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -189,8 +203,8 @@ export default function UsuariosPage() {
         const error = await res.json()
         toast({ title: "Error", description: error.message || "No se pudo editar el usuario", variant: "destructive" })
       }
-    } catch {
-      toast({ title: "Error", description: "No se pudo editar el usuario", variant: "destructive" })
+    } catch (e) {
+      toast({ title: "Error", description: (e as Error).message || "No se pudo editar el usuario", variant: "destructive" })
     }
   }
 
@@ -198,7 +212,7 @@ export default function UsuariosPage() {
   const eliminarUsuario = async () => {
     if (!usuarioAEliminar) return
     try {
-      const res = await fetch(`/api/usuarios/${usuarioAEliminar.id}`, {
+      const res = await fetchConAuth(`/api/usuarios/${usuarioAEliminar.id}`, {
         method: "DELETE"
       })
       if (res.ok) {
@@ -208,33 +222,48 @@ export default function UsuariosPage() {
       } else {
         toast({ title: "Error", description: "No se pudo eliminar el usuario", variant: "destructive" })
       }
-    } catch {
-      toast({ title: "Error", description: "No se pudo eliminar el usuario", variant: "destructive" })
+    } catch (e) {
+      toast({ title: "Error", description: (e as Error).message || "No se pudo eliminar el usuario", variant: "destructive" })
     }
   }
 
   const cargarUsuarios = () => {
-    fetch("/api/usuarios")
-      .then(res => {
-        if (!res.ok) throw new Error();
-        return res.json();
-      })
-      .then(data => {
-        const usuariosAdaptados = data.map((u: any) => ({
-          id: u.id,
-          nombre_completo: u.nombreCompleto,
-          dni: u.dni,
-          rol: (u.rol || "").toLowerCase(),
-          turno: u.turno,
-          horario_entrada: u.horarioEntrada,
-          horario_salida: u.horarioSalida,
-        }))
-        setUsuarios(usuariosAdaptados)
-      })
-      .catch(() => toast({ title: "Error", description: "No se pudo cargar usuarios", variant: "destructive" }))
+  const token = localStorage.getItem("token");
+  if (!token) {
+    toast({ title: "Sesión expirada", description: "Por favor, inicia sesión de nuevo", variant: "destructive" });
+    // Aquí podrías redirigir al login si quieres
+    return;
   }
+  fetch("http://51.161.10.179:8080/usuarios", {
+    headers: {
+      "Authorization": `Bearer ${token}`,
+    }
+  })
+    .then(res => {
+      if (!res.ok) throw new Error("Error de sesión o autorización");
+      return res.json();
+    })
+    .then(data => {
+      const usuariosAdaptados = data.map((u: any) => ({
+        id: u.id,
+        nombre_completo: u.nombreCompleto,
+        dni: u.dni,
+        rol: (u.rol || "").toLowerCase(),
+        turno: u.turno,
+        horario_entrada: u.horarioEntrada,
+        horario_salida: u.horarioSalida,
+      }))
+      setUsuarios(usuariosAdaptados)
+    })
+    .catch((err) => {
+      toast({ title: "Sesión expirada", description: "Por favor, inicia sesión de nuevo", variant: "destructive" });
+      // Opcional: redirigir al login
+    })
+}
+
 
   useEffect(() => { cargarUsuarios() }, [])
+
 
   return (
     <RoleGuard allowedRoles={["administrador"]}>

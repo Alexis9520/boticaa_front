@@ -19,14 +19,15 @@ interface Producto {
   nombre: string
   precioVentaUnd: number
   cantidadGeneral: number
-  descuento?: number
+  descuento: number
+  // puedes agregar otros campos si es necesario
 }
 
 interface ProductoCarrito {
   codigoBarras: string
   nombre: string
   precioVentaUnd: number
-  descuento?: number
+  descuento: number
   cantidad: number
   subtotal: number
 }
@@ -35,6 +36,38 @@ interface UsuarioSesion {
   dni: string
   nombreCompleto: string
   rol: string
+}
+
+// Función auxiliar para fetch con autenticación
+async function fetchWithAuth(url: string, options: RequestInit = {}) {
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
+  if (!token) {
+    window.location.href = "/login"
+    throw new Error("No token")
+  }
+  const headers = {
+    ...(options.headers || {}),
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  }
+  const res = await fetch(url, { ...options, headers })
+  if (!res.ok) {
+    if (res.status === 401) {
+      localStorage.removeItem("token")
+      window.location.href = "/login"
+    }
+    const errorText = await res.text()
+    throw new Error(errorText || `Error en la petición: ${res.status}`)
+  }
+  const contentLength = res.headers.get("content-length")
+  if (res.status === 204 || contentLength === "0") return null
+  const text = await res.text()
+  if (!text) return null
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
 }
 
 export default function NuevaVentaPage() {
@@ -49,8 +82,6 @@ export default function NuevaVentaPage() {
   const [dniCliente, setDniCliente] = useState("")
   const [nombreCliente, setNombreCliente] = useState("")
   const [usuarioSesion, setUsuarioSesion] = useState<UsuarioSesion | null>(null)
-
-  // CONFIGURACIÓN GENERAL Y BOLETA
   const [configuracionGeneral, setConfiguracionGeneral] = useState(() => {
     if (typeof window !== "undefined") {
       const data = localStorage.getItem("configuracionGeneral")
@@ -100,8 +131,6 @@ export default function NuevaVentaPage() {
 
   const { toast } = useToast()
   const router = useRouter()
-
-  // Ticket print states
   const [showTicket, setShowTicket] = useState(false)
   const [ventaGenerada, setVentaGenerada] = useState<any>(null)
   const [printSize, setPrintSize] = useState<"58mm" | "80mm">("58mm")
@@ -122,13 +151,10 @@ export default function NuevaVentaPage() {
     }
   }, [showTicket, ventaGenerada, router])
 
-  // Cargar productos desde el backend
   useEffect(() => {
     const fetchProductos = async () => {
       try {
-        const res = await fetch("/api/productos")
-        if (!res.ok) throw new Error("Error al obtener productos")
-        const data = await res.json()
+        const data = await fetchWithAuth("http://51.161.10.179:8080/productos")
         setProductos(data)
       } catch (e) {
         toast({ title: "Error", description: "No se pudo cargar productos", variant: "destructive" })
@@ -137,23 +163,27 @@ export default function NuevaVentaPage() {
     fetchProductos()
   }, [toast])
 
-  // Cargar usuario de sesión
   useEffect(() => {
-    const fetchSesion = async () => {
+    const usuarioStr = typeof window !== "undefined" ? localStorage.getItem("usuario") : null;
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (usuarioStr && token) {
       try {
-        const res = await fetch("/api/sesion")
-        if (!res.ok) throw new Error("No autenticado")
-        const data = await res.json()
-        setUsuarioSesion(data.user)
+        const usuario = JSON.parse(usuarioStr);
+        setUsuarioSesion(usuario);
       } catch (e) {
-        toast({ title: "Error", description: "No has iniciado sesión", variant: "destructive" })
-        router.push("/login")
+        setUsuarioSesion(null);
+        localStorage.removeItem("usuario");
+        localStorage.removeItem("token");
+        toast({ title: "Error", description: "No has iniciado sesión", variant: "destructive" });
+        router.push("/login");
       }
+    } else {
+      setUsuarioSesion(null);
+      toast({ title: "Error", description: "No has iniciado sesión", variant: "destructive" });
+      router.push("/login");
     }
-    fetchSesion()
-  }, [toast, router])
+  }, [toast, router]);
 
-  // Calcular totales
   const total = carrito.reduce((sum, item) => sum + item.subtotal, 0)
   let vuelto = 0
   let faltante = 0
@@ -173,7 +203,6 @@ export default function NuevaVentaPage() {
     faltante = pagado < total ? total - pagado : 0
   }
 
-  // Buscar productos por nombre/código de barras
   const buscarProductos = () => {
     if (busqueda.trim() === "") {
       setResultados([])
@@ -192,13 +221,9 @@ export default function NuevaVentaPage() {
     }
   }
 
-  // Usar codigoBarras como ID único y aplicar descuento
   const agregarAlCarrito = (producto: Producto) => {
     let toastInfo: { title: string; description: string; variant: "default" | "destructive" } | null = null;
-    const tieneDescuento = !!producto.descuento && producto.descuento > 0
-    const precioFinal = tieneDescuento
-      ? producto.precioVentaUnd * (1 - (Number(producto.descuento) / 100))
-      : producto.precioVentaUnd
+    const precioFinal = producto.precioVentaUnd - (producto.descuento ?? 0);
 
     setCarrito((prev) => {
       const existente = prev.find((item) => item.codigoBarras === producto.codigoBarras)
@@ -207,7 +232,7 @@ export default function NuevaVentaPage() {
         if (nuevaCantidad <= producto.cantidadGeneral) {
           toastInfo = {
             title: "Producto añadido",
-            description: `Se agregó otra unidad de "${producto.nombre}" al carrito${tieneDescuento ? ` (Descuento: ${producto.descuento}%)` : ""}`,
+            description: `Se agregó otra unidad de "${producto.nombre}" al carrito${producto.descuento > 0 ? ` (Descuento)` : ""}`,
             variant: "default"
           }
           return prev.map((item) =>
@@ -226,7 +251,7 @@ export default function NuevaVentaPage() {
       } else {
         toastInfo = {
           title: "Producto añadido",
-          description: `Se agregó "${producto.nombre}" al carrito${tieneDescuento ? ` (Descuento: ${producto.descuento}%)` : ""}`,
+          description: `Se agregó "${producto.nombre}" al carrito${producto.descuento > 0 ? ` (Descuento)` : ""}`,
           variant: "default"
         }
         return [
@@ -235,7 +260,7 @@ export default function NuevaVentaPage() {
             codigoBarras: producto.codigoBarras,
             nombre: producto.nombre,
             precioVentaUnd: producto.precioVentaUnd,
-            descuento: producto.descuento ?? 0,
+            descuento: producto.descuento,
             cantidad: 1,
             subtotal: precioFinal,
           },
@@ -254,23 +279,20 @@ export default function NuevaVentaPage() {
     let toastInfo: { title: string; description: string; variant: "default" | "destructive" } | null = null;
 
     setCarrito((prev) => {
-      const producto = prev.find((item) => item.codigoBarras === codigoBarras)
-      if (!producto) return prev
+      const item = prev.find((i) => i.codigoBarras === codigoBarras)
+      if (!item) return prev
       const productoOriginal = productos.find((p) => p.codigoBarras === codigoBarras)
       if (!productoOriginal) return prev
-      const tieneDescuento = !!productoOriginal.descuento && productoOriginal.descuento > 0
-      const precioFinal = tieneDescuento
-        ? productoOriginal.precioVentaUnd * (1 - (Number(productoOriginal.descuento) / 100))
-        : productoOriginal.precioVentaUnd
-      const nuevaCantidad = producto.cantidad + incremento
+      const precioFinal = productoOriginal.precioVentaUnd - (productoOriginal.descuento ?? 0)
+      const nuevaCantidad = item.cantidad + incremento
 
       if (nuevaCantidad <= 0) {
         toastInfo = {
           title: "Producto eliminado",
-          description: `Se eliminó "${producto.nombre}" del carrito`,
+          description: `Se eliminó "${item.nombre}" del carrito`,
           variant: "default",
         }
-        return prev.filter((item) => item.codigoBarras !== codigoBarras)
+        return prev.filter((i) => i.codigoBarras !== codigoBarras)
       }
 
       if (nuevaCantidad > productoOriginal.cantidadGeneral) {
@@ -284,13 +306,13 @@ export default function NuevaVentaPage() {
 
       toastInfo = {
         title: "Cantidad actualizada",
-        description: `Cantidad de "${producto.nombre}" actualizada a ${nuevaCantidad}`,
+        description: `Cantidad de "${item.nombre}" actualizada a ${nuevaCantidad}`,
         variant: "default",
       }
-      return prev.map((item) =>
-        item.codigoBarras === codigoBarras
-          ? { ...item, cantidad: nuevaCantidad, subtotal: nuevaCantidad * precioFinal }
-          : item,
+      return prev.map((i) =>
+        i.codigoBarras === codigoBarras
+          ? { ...i, cantidad: nuevaCantidad, subtotal: nuevaCantidad * precioFinal }
+          : i,
       )
     })
 
@@ -384,63 +406,54 @@ export default function NuevaVentaPage() {
       metodoPago: {
         nombre: metodoPago.toUpperCase(),
         efectivo: (metodoPago === "efectivo" || metodoPago === "mixto") ? Number(montoEfectivo) : 0,
-        digital: (metodoPago === "yape" || metodoPago === "mixto") ? Number(montoYape) : 0, // <--- CORREGIDO
+        digital: (metodoPago === "yape" || metodoPago === "mixto") ? Number(montoYape) : 0,
       },
     }
 
     try {
-      const res = await fetch("/api/ventas", {
+      await fetchWithAuth("http://51.161.10.179:8080/api/ventas", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(ventaDTO),
       })
 
-      if (res.ok) {
-        toast({
-          title: "Venta realizada",
-          description: "La venta se ha registrado correctamente",
-          variant: "default",
-        })
-        const productosRes = await fetch("/api/productos")
-        if (productosRes.ok) {
-          setProductos(await productosRes.json())
-        }
-        setVentaGenerada({
-          fecha: new Date().toLocaleString(),
-          nombreCliente,
-          dniCliente: dniClienteEnviar,
-          nombreVendedor: usuarioSesion?.nombreCompleto, 
-          productos: carrito,
-          total,
-          metodoPago: ventaDTO.metodoPago
-        })
-        setShowTicket(true)
-        setCarrito([])
-        setMontoEfectivo("")
-        setMontoYape("")
-        setMostrarResultados(false)
-      } else {
-        const errorText = await res.text()
-        if (errorText.includes("No hay una caja abierta")) {
-          toast({
-            title: "No hay caja abierta",
-            description: "Primero debes abrir una caja antes de realizar una venta.",
-            variant: "destructive",
-          })
-        } else {
-          toast({
-            title: "Error",
-            description: errorText || "No se pudo registrar la venta",
-            variant: "destructive",
-          })
-        }
-      }
-    } catch (e) {
       toast({
-        title: "Error",
-        description: "No se pudo conectar con el servidor",
-        variant: "destructive",
+        title: "Venta realizada",
+        description: "La venta se ha registrado correctamente",
+        variant: "default",
       })
+      try {
+        const productosRes = await fetchWithAuth("http://51.161.10.179:8080/productos")
+        setProductos(productosRes)
+      } catch (e) {}
+      setVentaGenerada({
+        fecha: new Date().toLocaleString(),
+        nombreCliente,
+        dniCliente: dniClienteEnviar,
+        nombreVendedor: usuarioSesion?.nombreCompleto,
+        productos: carrito,
+        total,
+        metodoPago: ventaDTO.metodoPago
+      })
+      setShowTicket(true)
+      setCarrito([])
+      setMontoEfectivo("")
+      setMontoYape("")
+      setMostrarResultados(false)
+    } catch (e: any) {
+      const msg = typeof e === "string" ? e : (e?.message || "No se pudo registrar la venta")
+      if (msg.includes("No hay una caja abierta")) {
+        toast({
+          title: "No hay caja abierta",
+          description: "Primero debes abrir una caja antes de realizar una venta.",
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: msg || "No se pudo registrar la venta",
+          variant: "destructive",
+        })
+      }
     }
   }
  
@@ -569,47 +582,51 @@ export default function NuevaVentaPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {resultados.map((producto) => (
-                          <TableRow key={producto.codigoBarras}>
-                            <TableCell className="font-medium">{producto.codigoBarras}</TableCell>
-                            <TableCell>{producto.nombre}</TableCell>
-                            <TableCell>
-                              {producto.descuento && producto.descuento > 0 ? (
-                                <span>
-                                  <span className="line-through mr-1 text-xs text-muted-foreground">
-                                    S/ {producto.precioVentaUnd.toFixed(2)}
+                        {resultados.map((producto) => {
+                          const precioFinal = producto.precioVentaUnd - (producto.descuento ?? 0)
+                          const descuentoPorcentaje =
+                            producto.precioVentaUnd > 0
+                              ? ((producto.descuento / producto.precioVentaUnd) * 100)
+                              : 0
+                          return (
+                            <TableRow key={producto.codigoBarras}>
+                              <TableCell className="font-medium">{producto.codigoBarras}</TableCell>
+                              <TableCell>{producto.nombre}</TableCell>
+                              <TableCell>
+                                {(producto.descuento ?? 0) > 0 ? (
+                                  <span>
+                                    <span className="line-through mr-1 text-xs text-muted-foreground">
+                                      S/ {producto.precioVentaUnd.toFixed(2)}
+                                    </span>
+                                    <span className="text-emerald-600 font-semibold mr-1">
+                                      S/ {precioFinal.toFixed(2)}
+                                    </span>
+                                    <span className="inline-block bg-yellow-100 text-yellow-800 border-yellow-300 rounded px-2 py-0.5 text-xs align-middle">
+                                      -{descuentoPorcentaje.toFixed(2)}%
+                                    </span>
                                   </span>
-                                  <span className="text-emerald-600 font-semibold">
-                                    S/ {(producto.precioVentaUnd * (1 - Number(producto.descuento) / 100)).toFixed(2)}
-                                  </span>
-                                  <Badge
-                                    variant="outline"
-                                    className="bg-yellow-100 text-yellow-800 border-yellow-300 ml-2"
-                                  >
-                                    -{producto.descuento}% desc.
-                                  </Badge>
-                                </span>
-                              ) : (
-                                <span>S/ {producto.precioVentaUnd.toFixed(2)}</span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={producto.cantidadGeneral > 10 ? "default" : "destructive"}>
-                                {producto.cantidadGeneral} unidades
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                size="sm"
-                                onClick={() => agregarAlCarrito(producto)}
-                                disabled={producto.cantidadGeneral === 0}
-                              >
-                                <Plus className="h-4 w-4 mr-1" />
-                                Agregar
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                                ) : (
+                                  <span>S/ {producto.precioVentaUnd.toFixed(2)}</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={producto.cantidadGeneral > 10 ? "default" : "destructive"}>
+                                  {producto.cantidadGeneral} unidades
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  size="sm"
+                                  onClick={() => agregarAlCarrito(producto)}
+                                  disabled={producto.cantidadGeneral === 0}
+                                >
+                                  <Plus className="h-4 w-4 mr-1" />
+                                  Agregar
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -639,71 +656,78 @@ export default function NuevaVentaPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {carrito.map((item) => (
-                        <TableRow key={item.codigoBarras}>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium flex items-center gap-2">
-                                {item.nombre}
-                                {item.descuento && item.descuento > 0 && (
-                                  <Badge
-                                    variant="outline"
-                                    className="bg-yellow-100 text-yellow-800 border-yellow-300 ml-2"
-                                  >
-                                    -{item.descuento}% desc.
-                                  </Badge>
-                                )}
+                      {carrito.map((item) => {
+                        const precioFinal = item.precioVentaUnd - (item.descuento ?? 0)
+                        const descuentoPorcentaje =
+                          item.precioVentaUnd > 0
+                            ? ((item.descuento / item.precioVentaUnd) * 100)
+                            : 0
+                        return (
+                          <TableRow key={item.codigoBarras}>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium flex items-center gap-2">
+                                  {item.nombre}
+                                  {(item.descuento ?? 0) > 0 && (
+                                    <Badge
+                                      variant="outline"
+                                      className="bg-yellow-100 text-yellow-800 border-yellow-300 ml-2"
+                                    >
+                                      -{descuentoPorcentaje.toFixed(2)}%
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="text-sm text-muted-foreground">{item.codigoBarras}</div>
                               </div>
-                              <div className="text-sm text-muted-foreground">{item.codigoBarras}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {item.descuento && item.descuento > 0 ? (
-                              <span>
-                                <span className="line-through mr-1 text-xs text-muted-foreground">
-                                  S/ {item.precioVentaUnd.toFixed(2)}
+                            </TableCell>
+                            <TableCell>
+                              {(item.descuento ?? 0) > 0 ? (
+                                <span>
+                                  <span className="line-through mr-1 text-xs text-muted-foreground">
+                                    S/ {item.precioVentaUnd.toFixed(2)}
+                                  </span>
+                                  <span className="text-emerald-600 font-semibold mr-1">
+                                    S/ {precioFinal.toFixed(2)}
+                                  </span>
                                 </span>
-                                <span className="text-emerald-600 font-semibold">
-                                  S/ {(item.precioVentaUnd * (1 - item.descuento / 100)).toFixed(2)}
-                                </span>
-                              </span>
-                            ) : (
-                              <span>S/ {item.precioVentaUnd.toFixed(2)}</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
+                              ) : (
+                                <span>S/ {item.precioVentaUnd.toFixed(2)}</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => cambiarCantidad(item.codigoBarras, -1)}
+                                >
+                                  <Minus className="h-4 w-4" />
+                                </Button>
+                                <span className="w-8 text-center">{item.cantidad}</span>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => cambiarCantidad(item.codigoBarras, 1)}
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                            <TableCell>S/ {item.subtotal.toFixed(2)}</TableCell>
+                            <TableCell className="text-right">
                               <Button
-                                variant="outline"
+                                variant="ghost"
                                 size="icon"
-                                className="h-8 w-8"
-                                onClick={() => cambiarCantidad(item.codigoBarras, -1)}
+                                onClick={() => eliminarDelCarrito(item.codigoBarras)}
                               >
-                                <Minus className="h-4 w-4" />
+                                <Trash2 className="h-4 w-4" />
                               </Button>
-                              <span className="w-8 text-center">{item.cantidad}</span>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => cambiarCantidad(item.codigoBarras, 1)}
-                              >
-                                <Plus className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                          <TableCell>S/ {item.subtotal.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => eliminarDelCarrito(item.codigoBarras)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -832,7 +856,6 @@ export default function NuevaVentaPage() {
           </Card>
         </div>
       </div>
-      {/* Ticket para imprimir */}
       {showTicket && ventaGenerada && (
         <div className="ticket-print">
           <TicketPrint
@@ -842,8 +865,6 @@ export default function NuevaVentaPage() {
           />
         </div>
       )}
-
-      
     </div>
   )
 }

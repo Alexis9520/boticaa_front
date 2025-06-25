@@ -1,81 +1,57 @@
-"use server"
+export async function login(dni: string, password: string): Promise<boolean> {
+  const res = await fetch("http://192.168.1.11:8080/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dni, contrasena: password }),
+  });
 
-import { cookies } from "next/headers"
+  if (!res.ok) return false;
 
-const BACKEND_URL = "http://localhost:8080"; 
+  const data = await res.json();
+  if (data.token) {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("token", data.token);
 
-export async function login(dni: string, password: string) {
-  try {
-    const res = await fetch(`${BACKEND_URL}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dni, contrasena: password }), 
-    });
-
-    if (!res.ok) return false;
-
-    const data = await res.json();
-
-    // Ajusta esto según la respuesta de tu backend
-    if (data.token) {
-      const session = {
-        user: data.usuario || {}, 
-        token: data.token,
-        expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      };
-
-      const cookieStore = await cookies();
-      cookieStore.set("session", JSON.stringify(session), {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        maxAge: 60 * 60 * 24, // 24 horas
-        path: "/",
+      // Obtener usuario y guardar en localStorage
+      const userRes = await fetch("http://192.168.1.11:8080/usuarios/me", {
+        headers: {
+          Authorization: `Bearer ${data.token}`,
+        },
       });
-
-      if (typeof window !== "undefined") {
-        localStorage.setItem("token", data.token);
+      if (userRes.ok) {
+        const usuario = await userRes.json();
+        localStorage.setItem("usuario", JSON.stringify(usuario));
       }
-      return true;
     }
-
-    return false;
-  } catch (e) {
-    return false;
+    return true;
   }
-}
-
-export async function logout() {
-  const cookieStore = await cookies();
-  cookieStore.delete("session");
-}
-
-export async function getSession() {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("session");
-
-  if (!sessionCookie) {
-    return null;
-  }
-
-  try {
-    const session = JSON.parse(sessionCookie.value);
-
-    if (new Date(session.expires) < new Date()) {
-      return null;
-    }
-
-    return session;
-  } catch (error) {
-    return null;
-  }
+  return false;
 }
 
 export async function checkSession() {
-  const session = await getSession();
+  if (typeof window === "undefined") throw new Error("No token (SSR)");
+  const token = localStorage.getItem("token");
+  if (!token) throw new Error("No token");
 
-  if (!session) {
-    throw new Error("No session found");
+  const res = await fetch("http://192.168.1.11:8080/usuarios/me", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  // Verifica que la respuesta sea JSON y válida
+  const contentType = res.headers.get("content-type");
+  if (!res.ok) throw new Error("Sesión inválida");
+  if (contentType && contentType.indexOf("application/json") !== -1) {
+    return res.json();
+  } else {
+    throw new Error("Respuesta inválida del backend");
   }
+}
 
-  return session.user;
+export function logout() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("token");
+    localStorage.removeItem("usuario");
+  }
 }

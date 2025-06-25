@@ -9,10 +9,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Download, Plus, Search, ChevronDown, ChevronRight } from "lucide-react"
 import { DateRangePicker } from "@/components/date-range-picker"
-// @ts-ignore
 import jsPDF from "jspdf"
-// @ts-ignore
-import autoTable, { AutoTableReturn } from "jspdf-autotable"
+
+import { getBoletas } from "@/lib/api"
+import autoTable from 'jspdf-autotable';
+
+
+
 
 type ProductoVendido = {
   codBarras: string
@@ -86,23 +89,21 @@ export default function VentasPage() {
   const [busquedaBoletas, setBusquedaBoletas] = useState("")
   const [rangoFechasBoletas, setRangoFechasBoletas] = useState<Rango>({ from: undefined, to: undefined })
 
-  // Cada vez que cambian los filtros, vuelve a la primera página
   useEffect(() => {
     setPaginaActual(1)
   }, [busquedaBoletas, rangoFechasBoletas])
 
   useEffect(() => {
-    const params = new URLSearchParams({
-      page: String(paginaActual),
-      limit: String(tamanoPagina),
-      search: busquedaBoletas,
-      from: rangoFechasBoletas.from ? rangoFechasBoletas.from.toISOString().slice(0,10) : "",
-      to: rangoFechasBoletas.to ? rangoFechasBoletas.to.toISOString().slice(0,10) : ""
-    });
-
-    fetch(`/api/boletas?${params}`)
-      .then(res => res.json())
-      .then((data) => {
+    // Ahora usamos la función getBoletas, no fetch('/api/boletas')
+    const fetchBoletas = async () => {
+      try {
+        const data = await getBoletas({
+          page: paginaActual,
+          limit: tamanoPagina,
+          search: busquedaBoletas,
+          from: rangoFechasBoletas.from ? rangoFechasBoletas.from.toISOString().slice(0, 10) : undefined,
+          to: rangoFechasBoletas.to ? rangoFechasBoletas.to.toISOString().slice(0, 10) : undefined,
+        });
         if (Array.isArray(data.boletas)) {
           const boletasAdaptadas = data.boletas.map((b: any) => ({
             ...b,
@@ -122,11 +123,12 @@ export default function VentasPage() {
           setBoletas([])
           setTotalBoletas(0)
         }
-      })
-      .catch(() => {
+      } catch {
         setBoletas([])
         setTotalBoletas(0)
-      })
+      }
+    }
+    fetchBoletas()
   }, [paginaActual, tamanoPagina, busquedaBoletas, rangoFechasBoletas])
 
   const totalPaginas = Math.ceil(totalBoletas / tamanoPagina) || 1
@@ -154,7 +156,7 @@ export default function VentasPage() {
     doc.setFontSize(16)
     doc.text(`Detalle de Boleta`, 14, 18)
     doc.setFontSize(12)
-    const table1: AutoTableReturn = autoTable(doc, {
+    const table1 = autoTable(doc, {
       startY: 28,
       theme: "plain",
       body: [
@@ -167,7 +169,7 @@ export default function VentasPage() {
         ["Usuario:", boleta.usuario ?? ""]
       ],
       styles: { cellPadding: 2, fontSize: 12 }
-    })
+    }) as any
     if (boleta.productos && boleta.productos.length > 0) {
       autoTable(doc, {
         startY: (table1?.finalY ?? 28) + 5,

@@ -31,7 +31,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const validateSession = async () => {
       try {
         const userData = await checkSession()
-        // Normaliza el campo rol a minúsculas aquí y lo tipa correctamente
         if (userData && userData.rol) {
           const normalizedUser: User = {
             ...userData,
