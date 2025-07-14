@@ -4,7 +4,6 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
-import * as z from "zod"
 import { Pill } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -13,30 +12,23 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input"
 import { login } from "@/lib/auth"
 import { useToast } from "@/hooks/use-toast"
-
-const formSchema = z.object({
-  dni: z.string().length(8, {
-    message: "El DNI debe tener 8 dígitos",
-  }),
-  password: z.string().min(6, {
-    message: "La contraseña debe tener al menos 6 caracteres",
-  }),
-})
+import { loginSchema, type LoginFormData } from "@/lib/validation"
+import { config } from "@/lib/config"
 
 export default function LoginForm() {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+  const form = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
     defaultValues: {
       dni: "",
       password: "",
     },
   })
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
+  async function onSubmit(values: LoginFormData) {
     setIsLoading(true)
 
     try {
@@ -44,10 +36,10 @@ export default function LoginForm() {
 
       if (success) {
         toast({
-        variant: "default",
-        title: "¡Bienvenido!",
-        description: `Has iniciado sesión correctamente`,
-      })
+          variant: "default",
+          title: "¡Bienvenido!",
+          description: "Has iniciado sesión correctamente",
+        })
         router.push("/dashboard")
         router.refresh()
       } else {
@@ -58,10 +50,11 @@ export default function LoginForm() {
         })
       }
     } catch (error) {
+      console.error('Error durante el login:', error)
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Ocurrió un error al iniciar sesión",
+        description: "Ocurrió un error al iniciar sesión. Inténtalo de nuevo.",
       })
     } finally {
       setIsLoading(false)
@@ -74,7 +67,7 @@ export default function LoginForm() {
         <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center mb-2">
           <Pill className="h-8 w-8 text-emerald-600 dark:text-emerald-300" />
         </div>
-        <CardTitle className="text-2xl text-center">Boticas Said</CardTitle>
+        <CardTitle className="text-2xl text-center">{config.appName}</CardTitle>
         <CardDescription className="text-center">Ingresa tus credenciales para acceder al sistema</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
