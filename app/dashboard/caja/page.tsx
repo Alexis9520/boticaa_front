@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -21,7 +21,10 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { motion, AnimatePresence } from "framer-motion"
-import { ArrowDownIcon, ArrowUpIcon, Calculator, DollarSign, Plus, TrendingDown, TrendingUp, AlertTriangle } from "lucide-react"
+import {
+  ArrowDownIcon, ArrowUpIcon, Calculator, DollarSign, Plus,
+  TrendingDown, TrendingUp, AlertTriangle, RefreshCcw, Search
+} from "lucide-react"
 
 type Usuario = {
   id?: number
@@ -78,23 +81,16 @@ async function fetchWithToken(url: string, options: RequestInit = {}): Promise<a
     "Content-Type": "application/json",
   };
   const res = await fetch(url, { ...options, headers, credentials: "include" });
-
-  // Si la respuesta es 204 No Content, retorna null
   if (res.status === 204) return null;
-
-  // Si esperas JSON
   const contentType = res.headers.get("content-type");
-  if (contentType && contentType.includes("application/json")) {
-    return await res.json();
-  }
-
-  // Si esperas texto plano (por ejemplo, en /movimiento)
+  if (contentType && contentType.includes("application/json")) return await res.json();
   const text = await res.text();
   if (text) return text;
-
   return null;
 }
+
 export default function CajaPage() {
+  // Estado principal
   const [cajaAbierta, setCajaAbierta] = useState(false)
   const [efectivoInicial, setEfectivoInicial] = useState("")
   const [efectivoFinalDeclarado, setEfectivoFinalDeclarado] = useState("")
@@ -108,129 +104,45 @@ export default function CajaPage() {
   const [usuario, setUsuario] = useState<Usuario | null>(null)
   const [historial, setHistorial] = useState<HistorialCaja[]>([])
   const [alertaCajaAbierta, setAlertaCajaAbierta] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [autoRefresh, setAutoRefresh] = useState(false)
+  const [movimientoSearch, setMovimientoSearch] = useState("")
+  const [movimientoFiltroTipo, setMovimientoFiltroTipo] = useState("")
+  const [confirmCerrar, setConfirmCerrar] = useState(false)
+  const [confirmMovimiento, setConfirmMovimiento] = useState(false)
+  const movimientoPendiente = useRef<{ tipo: string; monto: string; descripcion: string } | null>(null)
   const { toast } = useToast()
 
-  // Cargar usuario desde el contexto o sesión
+  // Cargar usuario desde sesión
   useEffect(() => {
     if (typeof window === "undefined") return;
     const storedUsuario = localStorage.getItem("usuario")
     if (storedUsuario) {
       try {
-        const parsedUsuario = JSON.parse(storedUsuario) as Usuario
-        setUsuario(parsedUsuario)
-      } catch (error) {
-        console.error("Error al parsear usuario desde localStorage:", error)
+        setUsuario(JSON.parse(storedUsuario) as Usuario)
+      } catch {
         setUsuario(null)
       }
-    } else {
-      setUsuario(null)
-    }
+    } else setUsuario(null)
   }, [])
 
-  // Cargar datos de caja al iniciar
-  useEffect(() => {
+  // Función reutilizable para refrescar TODO
+  const refreshAll = async () => {
     if (!usuario) return
-    fetchWithToken(`http://51.161.10.179:8080/api/cajas/actual?dniUsuario=${usuario.dni}`)
-      .then((data) => {
-        if (!data) {
-          setResumen(null)
-          setCajaAbierta(false)
-          setEfectivoInicial("")
-          setMovimientos([])
-          setEfectivoFinalDeclarado("")
-          return
-        }
-        setResumen({
-          efectivo: data.efectivo ?? 0,
-          totalYape: data.totalYape ?? 0,
-          ingresos: data.ingresos ?? 0,
-          egresos: data.egresos ?? 0,
-          efectivoInicial: data.efectivoInicial ?? 0,
-          efectivoFinal: data.efectivoFinal ?? 0,
-          cajaAbierta: !data.fechaCierre,
-          ventasEfectivo: data.ventasEfectivo ?? 0,
-          ventasYape: data.ventasYape ?? 0,
-          ventasMixto: data.ventasMixto ?? 0,
-          totalVentas: data.totalVentas ?? 0,
-          movimientos: data.movimientos ?? [],
-          diferencia: data.diferencia ?? 0,
-          fechaApertura: data.fechaApertura,
-          fechaCierre: data.fechaCierre,
-          usuarioResponsable: data.usuarioResponsable
-        })
-        setCajaAbierta(!data.fechaCierre)
-        setEfectivoInicial((data.efectivoInicial ?? 0).toFixed(2))
-        setMovimientos(data.movimientos ?? [])
-        setEfectivoFinalDeclarado("")
-      })
-      .catch(e => {
-        console.error("Error consultando caja actual:", e)
-      })
-  }, [usuario])
-
-  // Cargar historial de cajas
-  useEffect(() => {
-    fetchWithToken("http://51.161.10.179:8080/api/cajas/historial")
-      .then(setHistorial)
-      .catch(() => setHistorial([]))
-  }, [])
-
-  // Chequear si hay otra caja abierta para alerta global
-  useEffect(() => {
-    fetchWithToken("http://51.161.10.179:8080/api/cajas/abiertas")
-      .then((cajas) => {
-        setAlertaCajaAbierta(Array.isArray(cajas) && cajas.length > 0)
-      })
-      .catch(() => setAlertaCajaAbierta(false))
-  }, [cajaAbierta])
-
-  // Validaciones de input
-  const isValidMonto = (monto: string) => {
-    if (!monto) return false
-    const val = Number(monto)
-    return !isNaN(val) && val > 0
-  }
-
-  const isValidEfectivo = (valor: string) => {
-    if (!valor) return false
-    const val = Number(valor)
-    return !isNaN(val) && val >= 0
-  }
-
-  const abrirCaja = async () => {
-    if (!isValidEfectivo(efectivoInicial)) {
-      toast({
-        title: "Error",
-        description: "Ingresa un monto válido y no negativo para abrir la caja",
-        variant: "destructive",
-      })
-      return
-    }
-    if (!usuario || !usuario.dni) {
-      toast({
-        title: "Error",
-        description: "No se encontró el usuario en sesión",
-        variant: "destructive",
-      })
-      return
-    }
+    setLoading(true)
+    setError(null)
     try {
-      const data = await fetchWithToken("http://51.161.10.179:8080/api/cajas/abrir", {
-        method: "POST",
-        body: JSON.stringify({
-          dniUsuario: usuario.dni,
-          efectivoInicial: Number.parseFloat(efectivoInicial)
-        }),
-      });
-      setCajaAbierta(true)
-      setResumen({
+      // Resumen y movimientos
+      const data = await fetchWithToken(`http://localhost:8080/api/cajas/actual?dniUsuario=${usuario.dni}`)
+      setResumen(data ? {
         efectivo: data.efectivo ?? 0,
         totalYape: data.totalYape ?? 0,
         ingresos: data.ingresos ?? 0,
         egresos: data.egresos ?? 0,
         efectivoInicial: data.efectivoInicial ?? 0,
         efectivoFinal: data.efectivoFinal ?? 0,
-        cajaAbierta: true,
+        cajaAbierta: !data.fechaCierre,
         ventasEfectivo: data.ventasEfectivo ?? 0,
         ventasYape: data.ventasYape ?? 0,
         ventasMixto: data.ventasMixto ?? 0,
@@ -240,155 +152,151 @@ export default function CajaPage() {
         fechaApertura: data.fechaApertura,
         fechaCierre: data.fechaCierre,
         usuarioResponsable: data.usuarioResponsable
-      })
+      } : null)
+      setMovimientos(data?.movimientos ?? [])
+      setCajaAbierta(Boolean(data) && !data.fechaCierre)
+      setEfectivoInicial((data?.efectivoInicial ?? 0).toFixed(2))
+      setEfectivoFinalDeclarado("")
+      // Historial
+      const hist = await fetchWithToken("http://localhost:8080/api/cajas/historial")
+      setHistorial(hist ?? [])
+      // Alerta cajas abiertas
+      const cajas = await fetchWithToken("http://localhost:8080/api/cajas/abiertas")
+      setAlertaCajaAbierta(Array.isArray(cajas) && cajas.length > 0)
+    } catch (e: any) {
+      setError("Error al refrescar datos: " + (e?.message || "desconocido"))
       toast({
-        title: "Caja abierta",
-        description: `Caja abierta con S/ ${efectivoInicial} en efectivo inicial`,
-      })
-    } catch (e) {
-      console.error("Error inesperado en abrirCaja:", e)
-      toast({
-        title: "Error al abrir caja",
-        description: "Error inesperado en la petición",
+        title: "Error",
+        description: e?.message || "No se pudo refrescar los datos",
         variant: "destructive",
       })
+    } finally {
+      setLoading(false)
     }
   }
 
+  // Cargar al iniciar y con usuario
+  useEffect(() => { refreshAll() }, [usuario])
+
+  // Auto-refresh cada 30s si activado
+  useEffect(() => {
+    if (!autoRefresh) return
+    const interval = setInterval(() => { refreshAll() }, 30000)
+    return () => clearInterval(interval)
+  }, [autoRefresh, usuario])
+
+  // Confirmación de cierre de caja
+  const handleCerrarCaja = () => {
+    setConfirmCerrar(true)
+  }
+  const confirmarCerrarCaja = async () => {
+    setConfirmCerrar(false)
+    await cerrarCaja()
+  }
+
+  // Confirmación de movimiento grande
+  const handleAgregarMovimiento = () => {
+    const monto = parseFloat(nuevoMovimiento.monto)
+    if (monto >= 1000) {
+      movimientoPendiente.current = { ...nuevoMovimiento }
+      setConfirmMovimiento(true)
+    } else {
+      agregarMovimiento()
+    }
+  }
+  const confirmarAgregarMovimiento = async () => {
+    setConfirmMovimiento(false)
+    if (movimientoPendiente.current) {
+      await agregarMovimiento(movimientoPendiente.current)
+      movimientoPendiente.current = null
+    }
+  }
+
+  // Validaciones
+  const isValidMonto = (monto: string) => {
+    if (!monto) return false
+    const val = Number(monto)
+    return !isNaN(val) && val > 0
+  }
+  const isValidEfectivo = (valor: string) => {
+    if (!valor) return false
+    const val = Number(valor)
+    return !isNaN(val) && val >= 0
+  }
+
+  // Abrir caja
+  const abrirCaja = async () => {
+    if (!isValidEfectivo(efectivoInicial)) {
+      toast({ title: "Error", description: "Ingresa un monto válido y no negativo para abrir la caja", variant: "destructive" })
+      return
+    }
+    if (!usuario || !usuario.dni) {
+      toast({ title: "Error", description: "No se encontró el usuario en sesión", variant: "destructive" })
+      return
+    }
+    setLoading(true)
+    try {
+      await fetchWithToken("http://localhost:8080/api/cajas/abrir", {
+        method: "POST",
+        body: JSON.stringify({ dniUsuario: usuario.dni, efectivoInicial: Number.parseFloat(efectivoInicial) }),
+      })
+      await refreshAll()
+      toast({ title: "Caja abierta", description: `Caja abierta con S/ ${efectivoInicial} en efectivo inicial` })
+    } catch (e) {
+      toast({ title: "Error al abrir caja", description: "Error inesperado en la petición", variant: "destructive" })
+    } finally { setLoading(false) }
+  }
+
+  // Cerrar caja
   const cerrarCaja = async () => {
     if (!usuario || !usuario.dni) {
-      toast({
-        title: "Error",
-        description: "No se encontró el usuario en sesión",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: "No se encontró el usuario en sesión", variant: "destructive" })
       return
     }
     if (!isValidEfectivo(efectivoFinalDeclarado)) {
-      toast({
-        title: "Error",
-        description: "Debes ingresar el efectivo contado (valor no negativo)",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: "Debes ingresar el efectivo contado (valor no negativo)", variant: "destructive" })
       return
     }
+    setLoading(true)
     try {
-      const data = await fetchWithToken("http://51.161.10.179:8080/api/cajas/cerrar", {
+      await fetchWithToken("http://localhost:8080/api/cajas/cerrar", {
         method: "POST",
-        body: JSON.stringify({
-          dniUsuario: usuario.dni,
-          efectivoFinalDeclarado: Number.parseFloat(efectivoFinalDeclarado)
-        }),
+        body: JSON.stringify({ dniUsuario: usuario.dni, efectivoFinalDeclarado: Number.parseFloat(efectivoFinalDeclarado) }),
       })
-      setCajaAbierta(false)
-      toast({
-        title: "Caja cerrada",
-        description: "La caja ha sido cerrada correctamente",
-      })
-      // Refresca el resumen
-      fetchWithToken(`http://51.161.10.179:8080/api/cajas/actual?dniUsuario=${usuario.dni}`)
-        .then((data2) => {
-          setResumen(data2 ? {
-            efectivo: data2.efectivo ?? 0,
-            totalYape: data2.totalYape ?? 0,
-            ingresos: data2.ingresos ?? 0,
-            egresos: data2.egresos ?? 0,
-            efectivoInicial: data2.efectivoInicial ?? 0,
-            efectivoFinal: data2.efectivoFinal ?? 0,
-            cajaAbierta: !data2.fechaCierre,
-            ventasEfectivo: data2.ventasEfectivo ?? 0,
-            ventasYape: data2.ventasYape ?? 0,
-            ventasMixto: data2.ventasMixto ?? 0,
-            totalVentas: data2.totalVentas ?? 0,
-            movimientos: data2.movimientos ?? [],
-            diferencia: data2.diferencia ?? 0,
-            fechaApertura: data2.fechaApertura,
-            fechaCierre: data2.fechaCierre,
-            usuarioResponsable: data2.usuarioResponsable
-          } : null)
-          setEfectivoFinalDeclarado("")
-        })
+      await refreshAll()
+      toast({ title: "Caja cerrada", description: "La caja ha sido cerrada correctamente" })
     } catch (e) {
-      toast({
-        title: "Error al cerrar caja",
-        description: "Error inesperado en la petición",
-        variant: "destructive",
-      })
-    }
+      toast({ title: "Error al cerrar caja", description: "Error inesperado en la petición", variant: "destructive" })
+    } finally { setLoading(false) }
   }
 
-  const agregarMovimiento = async () => {
-    if (!nuevoMovimiento.tipo || !nuevoMovimiento.monto || !nuevoMovimiento.descripcion) {
-    toast({
-      title: "Error",
-      description: "Completa todos los campos del movimiento",
-      variant: "destructive",
-    });
-    return;
-  }
-    if (!isValidMonto(nuevoMovimiento.monto)) {
-    toast({
-      title: "Error",
-      description: "El monto debe ser mayor a 0",
-      variant: "destructive",
-    });
-    return;
-  }
-  if (!usuario || !usuario.dni) {
-    toast({
-      title: "Error",
-      description: "No se encontró el usuario en sesión",
-      variant: "destructive",
-    });
-    return;
-  }
+  // Agregar movimiento (puede recibir params para la confirmación)
+  const agregarMovimiento = async (movParam?: { tipo: string; monto: string; descripcion: string }) => {
+    const mov = movParam || nuevoMovimiento
+    if (!mov.tipo || !mov.monto || !mov.descripcion) {
+      toast({ title: "Error", description: "Completa todos los campos del movimiento", variant: "destructive" }); return;
+    }
+    if (!isValidMonto(mov.monto)) {
+      toast({ title: "Error", description: "El monto debe ser mayor a 0", variant: "destructive" }); return;
+    }
+    if (!usuario || !usuario.dni) {
+      toast({ title: "Error", description: "No se encontró el usuario en sesión", variant: "destructive" }); return;
+    }
+    setLoading(true)
     try {
-      await fetchWithToken("http://51.161.10.179:8080/api/cajas/movimiento", {
-      method: "POST",
-      body: JSON.stringify({
-        tipo: nuevoMovimiento.tipo,
-        monto: Number.parseFloat(nuevoMovimiento.monto),
-        descripcion: nuevoMovimiento.descripcion,
-        dniUsuario: usuario.dni,
-      }),
-    });
-    toast({
-      title: "Movimiento agregado",
-      description: "El movimiento se ha registrado correctamente",
-    });
-      // Refresca los movimientos y resumen
-      // Refresca movimientos y resumen (con await)
-    const data2 = await fetchWithToken(`http://51.161.10.179:8080/api/cajas/actual?dniUsuario=${usuario.dni}`);
-    setMovimientos(data2?.movimientos ?? []);
-    setResumen(data2 ? {
-      efectivo: data2.efectivo ?? 0,
-      totalYape: data2.totalYape ?? 0,
-      ingresos: data2.ingresos ?? 0,
-      egresos: data2.egresos ?? 0,
-      efectivoInicial: data2.efectivoInicial ?? 0,
-      efectivoFinal: data2.efectivoFinal ?? 0,
-      cajaAbierta: !data2.fechaCierre,
-      ventasEfectivo: data2.ventasEfectivo ?? 0,
-      ventasYape: data2.ventasYape ?? 0,
-      ventasMixto: data2.ventasMixto ?? 0,
-      totalVentas: data2.totalVentas ?? 0,
-      movimientos: data2.movimientos ?? [],
-      diferencia: data2.diferencia ?? 0,
-      fechaApertura: data2.fechaApertura,
-      fechaCierre: data2.fechaCierre,
-      usuarioResponsable: data2.usuarioResponsable
-    } : null);
-      setNuevoMovimiento({ tipo: "", monto: "", descripcion: "" });
-  } catch (e: any) {
-    toast({
-      title: "Error",
-      description: e?.message || "Error inesperado en la petición",
-      variant: "destructive",
-    });
-    }
+      await fetchWithToken("http://localhost:8080/api/cajas/movimiento", {
+        method: "POST",
+        body: JSON.stringify({ ...mov, monto: Number.parseFloat(mov.monto), dniUsuario: usuario.dni }),
+      })
+      await refreshAll()
+      setNuevoMovimiento({ tipo: "", monto: "", descripcion: "" })
+      toast({ title: "Movimiento agregado", description: "El movimiento se ha registrado correctamente" })
+    } catch (e: any) {
+      toast({ title: "Error", description: e?.message || "Error inesperado en la petición", variant: "destructive" })
+    } finally { setLoading(false) }
   }
 
-  // Componente para tarjeta de diferencia en cierre
+  // Diferencia en cierre
   function DiferenciaCierreCard({ diferencia }: { diferencia: number | undefined }) {
     if (typeof diferencia !== "number" || diferencia === 0) return null
     const esFaltante = diferencia < 0
@@ -420,7 +328,7 @@ export default function CajaPage() {
     )
   }
 
-  // Función para mostrar el efectivo esperado en cierre y resumen diario (igual que backend)
+  // Efectivo esperado igual que backend
   const calcularEfectivoEsperado = () => {
     if (!resumen) return "--"
     return (
@@ -430,6 +338,13 @@ export default function CajaPage() {
       resumen.egresos
     ).toFixed(2)
   }
+
+  // Movimientos filtrados
+  const movimientosFiltrados = movimientos
+    .filter(mov =>
+      (!movimientoSearch || mov.descripcion.toLowerCase().includes(movimientoSearch.toLowerCase()) || mov.usuario.toLowerCase().includes(movimientoSearch.toLowerCase()))
+      && (movimientoFiltroTipo === "" || movimientoFiltroTipo === "todos" || mov.tipo.toLowerCase() === movimientoFiltroTipo.toLowerCase())
+    )
 
   return (
     <div className="flex flex-col gap-5">
@@ -455,11 +370,31 @@ export default function CajaPage() {
           <p className="text-muted-foreground">Administra la apertura, cierre y movimientos de caja</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="flex items-center gap-2"
+            onClick={refreshAll}
+            disabled={loading}
+            title="Refrescar datos"
+          >
+            <RefreshCcw className="h-4 w-4 animate-spin" style={{ animationPlayState: loading ? "running" : "paused" }} />
+            Refrescar
+          </Button>
+          <div className="flex items-center gap-1">
+            <input type="checkbox" id="auto-refresh" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
+            <Label htmlFor="auto-refresh" className="cursor-pointer text-xs">Auto-refresh</Label>
+          </div>
           <Badge variant={cajaAbierta ? "default" : "secondary"} className={cajaAbierta ? "bg-emerald-600" : "bg-red-600 text-white"}>
             {cajaAbierta ? "Caja Abierta" : "Caja Cerrada"}
           </Badge>
         </div>
       </div>
+
+      {error && (
+        <div className="bg-red-100 border-l-4 border-red-500 text-red-800 p-3 rounded-md">
+          {error}
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -527,14 +462,14 @@ export default function CajaPage() {
                     type="number"
                     step="0.01"
                     min={0}
-                    placeholder="0.00"
+                    placeholder=""
                     value={efectivoInicial}
                     onChange={(e) => setEfectivoInicial(e.target.value)}
-                    disabled={cajaAbierta}
+                    disabled={cajaAbierta || loading}
                   />
                 </div>
-                <Button onClick={abrirCaja} disabled={cajaAbierta} className="w-full">
-                  {cajaAbierta ? "Caja ya está abierta" : "Abrir Caja"}
+                <Button onClick={abrirCaja} disabled={cajaAbierta || loading} className="w-full">
+                  {cajaAbierta ? "Caja ya está abierta" : loading ? "Abriendo..." : "Abrir Caja"}
                 </Button>
               </CardContent>
             </Card>
@@ -564,9 +499,7 @@ export default function CajaPage() {
                   </div>
                   <div className="flex justify-between font-bold">
                     <span>Efectivo esperado:</span>
-                    <span>
-                      S/ {calcularEfectivoEsperado()}
-                    </span>
+                    <span>S/ {calcularEfectivoEsperado()}</span>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -579,11 +512,16 @@ export default function CajaPage() {
                     placeholder="0.00"
                     value={efectivoFinalDeclarado}
                     onChange={(e) => setEfectivoFinalDeclarado(e.target.value)}
-                    disabled={!cajaAbierta}
+                    disabled={!cajaAbierta || loading}
                   />
                 </div>
-                <Button onClick={cerrarCaja} disabled={!cajaAbierta} variant="destructive" className="w-full">
-                  {!cajaAbierta ? "Caja ya está cerrada" : "Cerrar Caja"}
+                <Button
+                  onClick={handleCerrarCaja}
+                  disabled={!cajaAbierta || loading}
+                  variant="destructive"
+                  className="w-full"
+                >
+                  {!cajaAbierta ? "Caja ya está cerrada" : loading ? "Cerrando..." : "Cerrar Caja"}
                 </Button>
                 <DiferenciaCierreCard diferencia={resumen?.diferencia} />
               </CardContent>
@@ -594,72 +532,94 @@ export default function CajaPage() {
         <TabsContent value="movimientos" className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
                 <div>
                   <CardTitle>Movimientos de Efectivo</CardTitle>
                   <CardDescription>Registra ingresos y egresos de efectivo</CardDescription>
                 </div>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Nuevo Movimiento
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Nuevo Movimiento</DialogTitle>
-                      <DialogDescription>Registra un nuevo movimiento de efectivo</DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="tipo-movimiento">Tipo de movimiento</Label>
-                        <Select
-                          value={nuevoMovimiento.tipo}
-                          onValueChange={(value) => setNuevoMovimiento({ ...nuevoMovimiento, tipo: value })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecciona el tipo" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="INGRESO">Ingreso</SelectItem>
-                            <SelectItem value="EGRESO">Egreso</SelectItem>
-                          </SelectContent>
-                        </Select>
+                <div className="flex flex-col md:flex-row items-center gap-2">
+                  <Input
+                    type="text"
+                    placeholder="Buscar por usuario/descripción..."
+                    className="w-48"
+                    value={movimientoSearch}
+                    onChange={e => setMovimientoSearch(e.target.value)}
+                  />
+                  <Select
+                    value={movimientoFiltroTipo || "todos"}
+                    onValueChange={v => setMovimientoFiltroTipo(v === "todos" ? "" : v)}
+                  >
+                    <SelectTrigger className="w-32">
+                      <SelectValue placeholder="Tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos</SelectItem>
+                      <SelectItem value="ingreso">Ingreso</SelectItem>
+                      <SelectItem value="egreso">Egreso</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Nuevo Movimiento
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Nuevo Movimiento</DialogTitle>
+                        <DialogDescription>Registra un nuevo movimiento de efectivo</DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="tipo-movimiento">Tipo de movimiento</Label>
+                          <Select
+                            value={nuevoMovimiento.tipo}
+                            onValueChange={(value) => setNuevoMovimiento({ ...nuevoMovimiento, tipo: value })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecciona el tipo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="INGRESO">Ingreso</SelectItem>
+                              <SelectItem value="EGRESO">Egreso</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="monto-movimiento">Monto</Label>
+                          <Input
+                            id="monto-movimiento"
+                            type="number"
+                            step="0.01"
+                            min={0.01}
+                            placeholder="0.00"
+                            value={nuevoMovimiento.monto}
+                            onChange={(e) => setNuevoMovimiento({ ...nuevoMovimiento, monto: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="descripcion-movimiento">Descripción</Label>
+                          <Textarea
+                            id="descripcion-movimiento"
+                            placeholder="Describe el motivo del movimiento"
+                            value={nuevoMovimiento.descripcion}
+                            onChange={(e) => setNuevoMovimiento({ ...nuevoMovimiento, descripcion: e.target.value })}
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="monto-movimiento">Monto</Label>
-                        <Input
-                          id="monto-movimiento"
-                          type="number"
-                          step="0.01"
-                          min={0.01}
-                          placeholder="0.00"
-                          value={nuevoMovimiento.monto}
-                          onChange={(e) => setNuevoMovimiento({ ...nuevoMovimiento, monto: e.target.value })}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="descripcion-movimiento">Descripción</Label>
-                        <Textarea
-                          id="descripcion-movimiento"
-                          placeholder="Describe el motivo del movimiento"
-                          value={nuevoMovimiento.descripcion}
-                          onChange={(e) => setNuevoMovimiento({ ...nuevoMovimiento, descripcion: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button onClick={agregarMovimiento}>Registrar Movimiento</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                      <DialogFooter>
+                        <Button onClick={handleAgregarMovimiento}>Registrar Movimiento</Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
+              <div className="rounded-md border overflow-x-auto">
+                <Table className="min-w-[740px]">
+                  <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>
                       <TableHead>Fecha/Hora</TableHead>
                       <TableHead>Tipo</TableHead>
@@ -669,13 +629,13 @@ export default function CajaPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {movimientos.length === 0 ? (
+                    {movimientosFiltrados.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={5} className="text-center text-muted-foreground">
                           No hay movimientos registrados.
                         </TableCell>
                       </TableRow>
-                    ) : movimientos.map((mov) => (
+                    ) : movimientosFiltrados.map((mov) => (
                       <TableRow key={mov.id}>
                         <TableCell>{mov.fecha}</TableCell>
                         <TableCell>
@@ -713,8 +673,8 @@ export default function CajaPage() {
             </CardHeader>
             <CardContent>
               <div className="rounded-md border overflow-x-auto">
-                <Table>
-                  <TableHeader>
+                <Table className="min-w-[950px]">
+                  <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>
                       <TableHead>Fecha Apertura</TableHead>
                       <TableHead>Fecha Cierre</TableHead>
@@ -798,9 +758,7 @@ export default function CajaPage() {
                     <div className="border-t pt-2">
                       <div className="flex justify-between font-bold">
                         <span>Efectivo final esperado:</span>
-                        <span>
-                          S/ {calcularEfectivoEsperado()}
-                        </span>
+                        <span>S/ {calcularEfectivoEsperado()}</span>
                       </div>
                     </div>
                   </div>
@@ -830,6 +788,35 @@ export default function CajaPage() {
           </Card>
         </TabsContent>
       </Tabs>
+      {/* Confirm dialogs */}
+      <Dialog open={confirmCerrar} onOpenChange={setConfirmCerrar}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Cerrar caja?</DialogTitle>
+            <DialogDescription>
+              ¿Estás seguro de cerrar la caja? Esta acción no se puede deshacer.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmCerrar(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={confirmarCerrarCaja}>Sí, cerrar caja</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={confirmMovimiento} onOpenChange={setConfirmMovimiento}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar movimiento grande</DialogTitle>
+            <DialogDescription>
+              El monto de este movimiento es elevado. ¿Deseas continuar?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmMovimiento(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={confirmarAgregarMovimiento}>Sí, registrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

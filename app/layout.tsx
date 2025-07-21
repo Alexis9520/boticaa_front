@@ -9,12 +9,12 @@ import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({ subsets: ["latin"] })
 
-export const metadata: Metadata = {
+export const metadata = {
   title: "Boticas Said",
   description: "Sistema de gestión",
-  
-    
-
+  icons: {
+    icon: "/favicon.png",
+  },
 }
 
 export default function RootLayout({

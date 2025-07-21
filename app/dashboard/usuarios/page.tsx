@@ -129,7 +129,7 @@ export default function UsuariosPage() {
 
     setIsEnviando(true)
     try {
-      const res = await fetchConAuth("http://51.161.10.179:8080/auth/register", {
+      const res = await fetchConAuth("http://localhost:8080/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -234,7 +234,7 @@ export default function UsuariosPage() {
     // Aquí podrías redirigir al login si quieres
     return;
   }
-  fetch("http://51.161.10.179:8080/usuarios", {
+  fetch("http://localhost:8080/usuarios", {
     headers: {
       "Authorization": `Bearer ${token}`,
     }

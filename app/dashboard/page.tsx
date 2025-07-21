@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import SalesChart from "@/components/sales-chart"
+import { fetchWithAuth } from "@/lib/api" // Ajusta al path real de tu utilidad
 
 type VentasDia = { monto: number, variacion: number }
 type VentasMes = { monto: number, variacion: number }
@@ -37,7 +38,6 @@ export default function Dashboard() {
   const { user, loading } = useAuth()
   const router = useRouter()
 
-  // ---- Hooks de estado deben ir aquí, nunca después de un return ----
   const [ventasDia, setVentasDia] = useState<VentasDia>({ monto: 0, variacion: 0 })
   const [ventasMes, setVentasMes] = useState<VentasMes>({ monto: 0, variacion: 0 })
   const [saldoCaja, setSaldoCaja] = useState<SaldoCaja>({ total: 0, efectivo: 0, yape: 0 })
@@ -54,34 +54,62 @@ export default function Dashboard() {
   }, [user, loading, router])
 
   useEffect(() => {
-    fetch("/api/dashboard/resumen")
-      .then(res => res.json())
-      .then(data => {
-        setVentasDia(data.ventasDia)
-        setVentasMes(data.ventasMes)
-        setSaldoCaja(data.saldoCaja)
-        setClientesAtendidos(data.clientesAtendidos)
-        setUltimasVentas(data.ultimasVentas)
-        setProductosMasVendidos(data.productosMasVendidos)
-        setProductosCriticos(data.productosCriticos)
-        setProductosVencimiento(data.productosVencimiento)
-      })
-  }, [])
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  if (!token) {
+    // Mejor UX: redirige al login si no hay token
+    router.replace("/login");
+    return;
+  }
+  fetch("http://localhost:8080/api/dashboard/resumen", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    }
+  })
+    .then(async (res) => {
+      if (res.status === 401) {
+        // Token expirado o inválido
+        localStorage.removeItem("token");
+        router.replace("/login");
+        return;
+      }
+      if (res.status === 403) {
+        // Acceso denegado por rol
+        alert("No tienes permisos para ver este dashboard (Error 403: Forbidden)");
+        router.replace("/"); // O redirige donde prefieras
+        return;
+      }
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || `Error en la petición: ${res.status}`);
+      }
+      return res.json();
+    })
+    .then((data) => {
+      if (!data) return;
+      setVentasDia(data.ventasDia);
+      setVentasMes(data.ventasMes);
+      setSaldoCaja(data.saldoCaja);
+      setClientesAtendidos(data.clientesAtendidos);
+      setUltimasVentas(data.ultimasVentas);
+      setProductosMasVendidos(data.productosMasVendidos);
+      setProductosCriticos(data.productosCriticos);
+      setProductosVencimiento(data.productosVencimiento);
+    })
+    .catch((err) => {
+      console.error(err);
+    });
+}, [router]);
 
-  // Returns condicionales DESPUÉS de los hooks:
   if (loading || !user) {
     return <Spinner />
   }
 
-  // Si no es admin, muestra advertencia (antes de redirigir en el useEffect)
   if (user.rol !== "administrador") {
     return (
       <Spinner warning="" />
     )
   }
-
-  // ---- Código del dashboard solo para administradores ----
-  return (
+return (
     <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
@@ -223,7 +251,7 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {productosMasVendidos.map((p, i) => (
+                  {(productosMasVendidos ?? []).map((p, i) => (
                     <div className="space-y-2" key={i}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -277,5 +305,5 @@ export default function Dashboard() {
         </TabsContent>
       </Tabs>
     </div>
-  )
+  );
 }

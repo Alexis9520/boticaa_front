@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Separator } from "@/components/ui/separator"
 import { useToast } from "@/hooks/use-toast"
-import { ArrowLeft, Minus, Plus, Search, Trash2, X } from "lucide-react"
+import { ArrowLeft, Minus, Plus, Search, Trash2, X, Package, Layers, Box } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import TicketPrint from "@/components/TicketPrint"
 
@@ -18,17 +18,21 @@ interface Producto {
   codigoBarras: string
   nombre: string
   precioVentaUnd: number
+  precioVentaBlister?: number
+  cantidadUnidadesBlister?: number
   cantidadGeneral: number
   descuento: number
-  // puedes agregar otros campos si es necesario
 }
 
 interface ProductoCarrito {
   codigoBarras: string
   nombre: string
   precioVentaUnd: number
+  precioVentaBlister?: number
+  cantidadUnidadesBlister?: number
   descuento: number
-  cantidad: number
+  cantidadBlister: number
+  cantidadUnidad: number
   subtotal: number
 }
 
@@ -38,7 +42,6 @@ interface UsuarioSesion {
   rol: string
 }
 
-// Función auxiliar para fetch con autenticación
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
   if (!token) {
@@ -154,7 +157,7 @@ export default function NuevaVentaPage() {
   useEffect(() => {
     const fetchProductos = async () => {
       try {
-        const data = await fetchWithAuth("http://51.161.10.179:8080/productos")
+        const data = await fetchWithAuth("http://localhost:8080/productos")
         setProductos(data)
       } catch (e) {
         toast({ title: "Error", description: "No se pudo cargar productos", variant: "destructive" })
@@ -184,7 +187,12 @@ export default function NuevaVentaPage() {
     }
   }, [toast, router]);
 
-  const total = carrito.reduce((sum, item) => sum + item.subtotal, 0)
+  // NUEVO: Calcular total
+  const total = carrito.reduce((sum, item) =>
+    sum +
+    ((item.precioVentaBlister ?? 0) * item.cantidadBlister) +
+    ((item.precioVentaUnd - (item.descuento ?? 0)) * item.cantidadUnidad)
+  , 0)
   let vuelto = 0
   let faltante = 0
   if (metodoPago === "efectivo") {
@@ -202,6 +210,9 @@ export default function NuevaVentaPage() {
     vuelto = pagado > total ? pagado - total : 0
     faltante = pagado < total ? total - pagado : 0
   }
+
+  // NUEVO: Formulario blister/unidad en resultados
+  const [blisterUnidadSeleccion, setBlisterUnidadSeleccion] = useState<{ [codigo: string]: { blisters: number, unidades: number } }>({})
 
   const buscarProductos = () => {
     if (busqueda.trim() === "") {
@@ -221,102 +232,94 @@ export default function NuevaVentaPage() {
     }
   }
 
+  // NUEVO: Agregar al carrito considerando blisters y unidades
   const agregarAlCarrito = (producto: Producto) => {
-    let toastInfo: { title: string; description: string; variant: "default" | "destructive" } | null = null;
-    const precioFinal = producto.precioVentaUnd - (producto.descuento ?? 0);
-
-    setCarrito((prev) => {
-      const existente = prev.find((item) => item.codigoBarras === producto.codigoBarras)
+    const seleccion = blisterUnidadSeleccion[producto.codigoBarras] || { blisters: 0, unidades: 0 }
+    const cantidadTotal = (producto.cantidadUnidadesBlister ?? 0) * seleccion.blisters + seleccion.unidades
+    if (cantidadTotal <= 0) {
+      toast({ title: "Cantidad inválida", description: "Agrega al menos 1 unidad o blister", variant: "destructive" })
+      return
+    }
+    if (cantidadTotal > producto.cantidadGeneral) {
+      toast({ title: "Stock insuficiente", description: `Stock insuficiente: máximo ${producto.cantidadGeneral} unidades`, variant: "destructive" })
+      return
+    }
+    setCarrito(prev => {
+      const existente = prev.find(item => item.codigoBarras === producto.codigoBarras)
       if (existente) {
-        const nuevaCantidad = existente.cantidad + 1
-        if (nuevaCantidad <= producto.cantidadGeneral) {
-          toastInfo = {
-            title: "Producto añadido",
-            description: `Se agregó otra unidad de "${producto.nombre}" al carrito${producto.descuento > 0 ? ` (Descuento)` : ""}`,
-            variant: "default"
-          }
-          return prev.map((item) =>
-            item.codigoBarras === producto.codigoBarras
-              ? { ...item, cantidad: nuevaCantidad, subtotal: nuevaCantidad * precioFinal }
-              : item,
-          )
-        } else {
-          toastInfo = {
-            title: "Stock insuficiente",
-            description: `Solo hay ${producto.cantidadGeneral} unidades disponibles`,
-            variant: "destructive"
-          }
+        const nuevoBlisters = existente.cantidadBlister + seleccion.blisters
+        const nuevoUnidades = existente.cantidadUnidad + seleccion.unidades
+        const nuevoTotal = (producto.cantidadUnidadesBlister ?? 0) * nuevoBlisters + nuevoUnidades
+        if (nuevoTotal > producto.cantidadGeneral) {
+          toast({ title: "Stock insuficiente", description: `Stock insuficiente: máximo ${producto.cantidadGeneral} unidades`, variant: "destructive" })
           return prev
         }
-      } else {
-        toastInfo = {
-          title: "Producto añadido",
-          description: `Se agregó "${producto.nombre}" al carrito${producto.descuento > 0 ? ` (Descuento)` : ""}`,
-          variant: "default"
-        }
-        return [
-          ...prev,
-          {
-            codigoBarras: producto.codigoBarras,
-            nombre: producto.nombre,
-            precioVentaUnd: producto.precioVentaUnd,
-            descuento: producto.descuento,
-            cantidad: 1,
-            subtotal: precioFinal,
-          },
-        ]
+        return prev.map(item =>
+          item.codigoBarras === producto.codigoBarras
+            ? {
+                ...item,
+                cantidadBlister: nuevoBlisters,
+                cantidadUnidad: nuevoUnidades,
+                subtotal:
+                  (producto.precioVentaBlister ?? 0) * nuevoBlisters +
+                  (producto.precioVentaUnd - (producto.descuento ?? 0)) * nuevoUnidades,
+              }
+            : item
+        )
       }
+      return [
+        ...prev,
+        {
+          codigoBarras: producto.codigoBarras,
+          nombre: producto.nombre,
+          precioVentaUnd: producto.precioVentaUnd,
+          precioVentaBlister: producto.precioVentaBlister,
+          cantidadUnidadesBlister: producto.cantidadUnidadesBlister,
+          descuento: producto.descuento,
+          cantidadBlister: seleccion.blisters,
+          cantidadUnidad: seleccion.unidades,
+          subtotal:
+            (producto.precioVentaBlister ?? 0) * seleccion.blisters +
+            (producto.precioVentaUnd - (producto.descuento ?? 0)) * seleccion.unidades,
+        },
+      ]
     })
-
+    setBlisterUnidadSeleccion(prev => ({ ...prev, [producto.codigoBarras]: { blisters: 0, unidades: 0 } }))
     setBusqueda("")
     setResultados([])
     setMostrarResultados(false)
-
-    if (toastInfo) toast(toastInfo)
+    toast({ title: "Producto añadido", description: `Se agregó "${producto.nombre}" al carrito`, variant: "default" })
   }
 
-  const cambiarCantidad = (codigoBarras: string, incremento: number) => {
-    let toastInfo: { title: string; description: string; variant: "default" | "destructive" } | null = null;
-
-    setCarrito((prev) => {
-      const item = prev.find((i) => i.codigoBarras === codigoBarras)
-      if (!item) return prev
-      const productoOriginal = productos.find((p) => p.codigoBarras === codigoBarras)
-      if (!productoOriginal) return prev
-      const precioFinal = productoOriginal.precioVentaUnd - (productoOriginal.descuento ?? 0)
-      const nuevaCantidad = item.cantidad + incremento
-
-      if (nuevaCantidad <= 0) {
-        toastInfo = {
-          title: "Producto eliminado",
-          description: `Se eliminó "${item.nombre}" del carrito`,
-          variant: "default",
+  // NUEVO: Cambiar cantidad de blisters/unidades en carrito
+  const cambiarCantidadCarrito = (codigoBarras: string, tipo: "blister" | "unidad", incremento: number) => {
+    setCarrito(prev => {
+      return prev.map(item => {
+        if (item.codigoBarras !== codigoBarras) return item
+        const producto = productos.find(p => p.codigoBarras === codigoBarras)
+        if (!producto) return item
+        let nuevaBlisters = item.cantidadBlister
+        let nuevaUnidades = item.cantidadUnidad
+        if (tipo === "blister") {
+          nuevaBlisters = Math.max(0, item.cantidadBlister + incremento)
+        } else {
+          nuevaUnidades = Math.max(0, item.cantidadUnidad + incremento)
         }
-        return prev.filter((i) => i.codigoBarras !== codigoBarras)
-      }
-
-      if (nuevaCantidad > productoOriginal.cantidadGeneral) {
-        toastInfo = {
-          title: "Stock insuficiente",
-          description: `Solo hay ${productoOriginal.cantidadGeneral} unidades disponibles`,
-          variant: "destructive",
+        const total = (producto.cantidadUnidadesBlister ?? 0) * nuevaBlisters + nuevaUnidades
+        if (total > producto.cantidadGeneral) {
+          toast({ title: "Stock insuficiente", description: `Stock insuficiente: máximo ${producto.cantidadGeneral} unidades`, variant: "destructive" })
+          return item
         }
-        return prev
-      }
-
-      toastInfo = {
-        title: "Cantidad actualizada",
-        description: `Cantidad de "${item.nombre}" actualizada a ${nuevaCantidad}`,
-        variant: "default",
-      }
-      return prev.map((i) =>
-        i.codigoBarras === codigoBarras
-          ? { ...i, cantidad: nuevaCantidad, subtotal: nuevaCantidad * precioFinal }
-          : i,
-      )
+        return {
+          ...item,
+          cantidadBlister: nuevaBlisters,
+          cantidadUnidad: nuevaUnidades,
+          subtotal:
+            (producto.precioVentaBlister ?? 0) * nuevaBlisters +
+            (producto.precioVentaUnd - (producto.descuento ?? 0)) * nuevaUnidades,
+        }
+      }).filter(i => i.cantidadBlister > 0 || i.cantidadUnidad > 0)
     })
-
-    if (toastInfo) toast(toastInfo)
   }
 
   const eliminarDelCarrito = (codigoBarras: string) => {
@@ -395,13 +398,16 @@ export default function NuevaVentaPage() {
 
     const dniClienteEnviar = dniCliente && dniCliente.trim() !== "" ? dniCliente.trim() : "99999999"
 
+    // Adaptar payload para backend
     const ventaDTO = {
       dniCliente: dniClienteEnviar,
       nombreCliente,
       dniVendedor: usuarioSesion.dni,
       productos: carrito.map((item) => ({
         codBarras: item.codigoBarras,
-        cantidad: item.cantidad,
+        cantidad:
+          (item.cantidadUnidadesBlister ?? 0) * item.cantidadBlister +
+          item.cantidadUnidad,
       })),
       metodoPago: {
         nombre: metodoPago.toUpperCase(),
@@ -411,7 +417,7 @@ export default function NuevaVentaPage() {
     }
 
     try {
-      await fetchWithAuth("http://51.161.10.179:8080/api/ventas", {
+      await fetchWithAuth("http://localhost:8080/api/ventas", {
         method: "POST",
         body: JSON.stringify(ventaDTO),
       })
@@ -422,7 +428,7 @@ export default function NuevaVentaPage() {
         variant: "default",
       })
       try {
-        const productosRes = await fetchWithAuth("http://51.161.10.179:8080/productos")
+        const productosRes = await fetchWithAuth("http://localhost:8080/productos")
         setProductos(productosRes)
       } catch (e) {}
       setVentaGenerada({
@@ -456,9 +462,10 @@ export default function NuevaVentaPage() {
       }
     }
   }
- 
+
+  // Visual: tabla de resultados y carrito mejorada para blisters
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" onClick={() => router.back()}>
@@ -570,14 +577,16 @@ export default function NuevaVentaPage() {
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
-                  <div className="border rounded-md max-h-60 overflow-y-auto">
+                  <div className="border rounded-md max-h-72 overflow-y-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>Código</TableHead>
                           <TableHead>Producto</TableHead>
+                          <TableHead>Presentación</TableHead>
                           <TableHead>Precio</TableHead>
                           <TableHead>Stock</TableHead>
+                          <TableHead className="text-center">Venta</TableHead>
                           <TableHead className="text-right">Acción</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -593,26 +602,133 @@ export default function NuevaVentaPage() {
                               <TableCell className="font-medium">{producto.codigoBarras}</TableCell>
                               <TableCell>{producto.nombre}</TableCell>
                               <TableCell>
-                                {(producto.descuento ?? 0) > 0 ? (
+                                {producto.cantidadUnidadesBlister && producto.precioVentaBlister ? (
                                   <span>
-                                    <span className="line-through mr-1 text-xs text-muted-foreground">
-                                      S/ {producto.precioVentaUnd.toFixed(2)}
-                                    </span>
-                                    <span className="text-emerald-600 font-semibold mr-1">
-                                      S/ {precioFinal.toFixed(2)}
-                                    </span>
-                                    <span className="inline-block bg-yellow-100 text-yellow-800 border-yellow-300 rounded px-2 py-0.5 text-xs align-middle">
-                                      -{descuentoPorcentaje.toFixed(2)}%
-                                    </span>
+                                    <Badge variant="outline" className="flex items-center gap-1 mb-1">
+                                      <Layers className="w-3 h-3 mr-1 text-primary" />
+                                      Blister: {producto.cantidadUnidadesBlister}u
+                                    </Badge>
+                                    <br />
+                                    <Badge variant="outline" className="flex items-center gap-1">
+                                      <Package className="w-3 h-3 mr-1" />
+                                      Suelto
+                                    </Badge>
                                   </span>
                                 ) : (
-                                  <span>S/ {producto.precioVentaUnd.toFixed(2)}</span>
+                                  <Badge variant="outline" className="flex items-center gap-1">
+                                    <Package className="w-3 h-3 mr-1" />
+                                    Suelto
+                                  </Badge>
                                 )}
+                              </TableCell>
+                              <TableCell>
+                                <div>
+                                  {producto.cantidadUnidadesBlister && producto.precioVentaBlister ? (
+                                    <div>
+                                      <span className="mr-1 font-semibold text-primary">
+                                        S/ {producto.precioVentaBlister.toFixed(2)}
+                                      </span>
+                                      <span className="text-xs text-muted-foreground">/ blister</span>
+                                      <br />
+                                      <span className="font-semibold text-emerald-600">
+                                        S/ {precioFinal.toFixed(2)}
+                                      </span>
+                                      <span className="text-xs text-muted-foreground">/ unidad</span>
+                                    </div>
+                                  ) : (
+                                    <span>
+                                      <span className="font-semibold text-emerald-600">
+                                        S/ {precioFinal.toFixed(2)}
+                                      </span>
+                                      <span className="text-xs text-muted-foreground">/ unidad</span>
+                                    </span>
+                                  )}
+                                  {(producto.descuento ?? 0) > 0 && (
+                                    <Badge
+                                      variant="outline"
+                                      className="bg-yellow-100 text-yellow-800 border-yellow-300 ml-2"
+                                    >
+                                      -{descuentoPorcentaje.toFixed(2)}%
+                                    </Badge>
+                                  )}
+                                </div>
                               </TableCell>
                               <TableCell>
                                 <Badge variant={producto.cantidadGeneral > 10 ? "default" : "destructive"}>
                                   {producto.cantidadGeneral} unidades
                                 </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex flex-col gap-1">
+                                  {producto.cantidadUnidadesBlister && producto.precioVentaBlister ? (
+                                    <div className="flex flex-col gap-1">
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-xs">Blisters</span>
+                                        <Input
+                                          type="number"
+                                          min={0}
+                                          max={Math.floor(producto.cantidadGeneral / producto.cantidadUnidadesBlister)}
+                                          className="w-16 h-8"
+                                          value={blisterUnidadSeleccion[producto.codigoBarras]?.blisters ?? ""}
+                                          onChange={e => {
+                                            const v = Math.max(0, Number(e.target.value))
+                                            setBlisterUnidadSeleccion(prev => ({
+                                              ...prev,
+                                              [producto.codigoBarras]: {
+                                                ...prev[producto.codigoBarras],
+                                                blisters: v,
+                                                unidades: prev[producto.codigoBarras]?.unidades ?? 0,
+                                              }
+                                            }))
+                                          }}
+                                        />
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-xs">Unidades</span>
+                                        <Input
+                                          type="number"
+                                          min={0}
+                                          max={producto.cantidadUnidadesBlister - 1}
+                                          className="w-16 h-8"
+                                          value={blisterUnidadSeleccion[producto.codigoBarras]?.unidades ?? ""}
+                                          onChange={e => {
+                                            let v = Math.max(0, Number(e.target.value))
+                                            if (producto.cantidadUnidadesBlister && v >= producto.cantidadUnidadesBlister) v = producto.cantidadUnidadesBlister - 1
+                                            setBlisterUnidadSeleccion(prev => ({
+                                              ...prev,
+                                              [producto.codigoBarras]: {
+                                                ...prev[producto.codigoBarras],
+                                                blisters: prev[producto.codigoBarras]?.blisters ?? 0,
+                                                unidades: v,
+                                              }
+                                            }))
+                                          }}
+                                        />
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-xs">Unidades</span>
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        max={producto.cantidadGeneral}
+                                        className="w-16 h-8"
+                                        value={blisterUnidadSeleccion[producto.codigoBarras]?.unidades ?? ""}
+                                        onChange={e => {
+                                          const v = Math.max(0, Number(e.target.value))
+                                          setBlisterUnidadSeleccion(prev => ({
+                                            ...prev,
+                                            [producto.codigoBarras]: {
+                                              blisters: 0,
+                                              unidades: v,
+                                            }
+                                          }))
+                                        }}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
                               </TableCell>
                               <TableCell className="text-right">
                                 <Button
@@ -649,85 +765,92 @@ export default function NuevaVentaPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Producto</TableHead>
-                        <TableHead>Precio</TableHead>
-                        <TableHead>Cantidad</TableHead>
+                        <TableHead>Blisters</TableHead>
+                        <TableHead>Unidades</TableHead>
                         <TableHead>Subtotal</TableHead>
                         <TableHead className="text-right">Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {carrito.map((item) => {
-                        const precioFinal = item.precioVentaUnd - (item.descuento ?? 0)
-                        const descuentoPorcentaje =
-                          item.precioVentaUnd > 0
-                            ? ((item.descuento / item.precioVentaUnd) * 100)
-                            : 0
-                        return (
-                          <TableRow key={item.codigoBarras}>
-                            <TableCell>
-                              <div>
-                                <div className="font-medium flex items-center gap-2">
-                                  {item.nombre}
-                                  {(item.descuento ?? 0) > 0 && (
-                                    <Badge
-                                      variant="outline"
-                                      className="bg-yellow-100 text-yellow-800 border-yellow-300 ml-2"
-                                    >
-                                      -{descuentoPorcentaje.toFixed(2)}%
-                                    </Badge>
-                                  )}
-                                </div>
-                                <div className="text-sm text-muted-foreground">{item.codigoBarras}</div>
+                      {carrito.map((item) => (
+                        <TableRow key={item.codigoBarras}>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium flex items-center gap-2">
+                                {item.nombre}
+                                {(item.descuento ?? 0) > 0 && (
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-yellow-100 text-yellow-800 border-yellow-300 ml-2"
+                                  >
+                                    Descuento
+                                  </Badge>
+                                )}
                               </div>
-                            </TableCell>
-                            <TableCell>
-                              {(item.descuento ?? 0) > 0 ? (
-                                <span>
-                                  <span className="line-through mr-1 text-xs text-muted-foreground">
-                                    S/ {item.precioVentaUnd.toFixed(2)}
-                                  </span>
-                                  <span className="text-emerald-600 font-semibold mr-1">
-                                    S/ {precioFinal.toFixed(2)}
-                                  </span>
-                                </span>
-                              ) : (
-                                <span>S/ {item.precioVentaUnd.toFixed(2)}</span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => cambiarCantidad(item.codigoBarras, -1)}
-                                >
-                                  <Minus className="h-4 w-4" />
-                                </Button>
-                                <span className="w-8 text-center">{item.cantidad}</span>
-                                <Button
-                                  variant="outline"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => cambiarCantidad(item.codigoBarras, 1)}
-                                >
-                                  <Plus className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                            <TableCell>S/ {item.subtotal.toFixed(2)}</TableCell>
-                            <TableCell className="text-right">
+                              <div className="text-sm text-muted-foreground">{item.codigoBarras}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
                               <Button
-                                variant="ghost"
+                                variant="outline"
                                 size="icon"
-                                onClick={() => eliminarDelCarrito(item.codigoBarras)}
+                                className="h-8 w-8"
+                                onClick={() => cambiarCantidadCarrito(item.codigoBarras, "blister", -1)}
+                                disabled={item.cantidadBlister === 0}
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Minus className="h-4 w-4" />
                               </Button>
-                            </TableCell>
-                          </TableRow>
-                        )
-                      })}
+                              <span className="w-8 text-center">{item.cantidadBlister}</span>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => cambiarCantidadCarrito(item.codigoBarras, "blister", 1)}
+                              >
+                                <Plus className="h-4 w-4" />
+                              </Button>
+                              <span className="text-xs text-muted-foreground ml-2">
+                                {item.cantidadUnidadesBlister ? `${item.cantidadUnidadesBlister}u/blister` : ""}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => cambiarCantidadCarrito(item.codigoBarras, "unidad", -1)}
+                                disabled={item.cantidadUnidad === 0}
+                              >
+                                <Minus className="h-4 w-4" />
+                              </Button>
+                              <span className="w-8 text-center">{item.cantidadUnidad}</span>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => cambiarCantidadCarrito(item.codigoBarras, "unidad", 1)}
+                              >
+                                <Plus className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            S/ {item.subtotal.toFixed(2)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => eliminarDelCarrito(item.codigoBarras)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
                     </TableBody>
                   </Table>
                 </div>
