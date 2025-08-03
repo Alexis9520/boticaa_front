@@ -3,24 +3,22 @@
 import { useTheme } from "next-themes"
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 
-const data = [
-  { hora: "8:00", ventas: 450 },
-  { hora: "9:00", ventas: 680 },
-  { hora: "10:00", ventas: 1200 },
-  { hora: "11:00", ventas: 1500 },
-  { hora: "12:00", ventas: 950 },
-  { hora: "13:00", ventas: 750 },
-  { hora: "14:00", ventas: 820 },
-  { hora: "15:00", ventas: 1100 },
-  { hora: "16:00", ventas: 1300 },
-  { hora: "17:00", ventas: 1450 },
-  { hora: "18:00", ventas: 1200 },
-  { hora: "19:00", ventas: 850 },
-]
+type VentasPorHora = { hora: string, total: number }
 
-export default function SalesChart() {
+interface SalesChartProps {
+  data: VentasPorHora[]
+}
+
+export default function SalesChart({ data }: SalesChartProps) {
   const { theme } = useTheme()
   const isDark = theme === "dark"
+
+  // Diagnóstico
+  console.log("Ventas por hora recibidas:", data)
+
+  if (!data || data.length === 0) {
+    return <div className="text-center text-muted-foreground">No hay datos de ventas por hora.</div>
+  }
 
   return (
     <ResponsiveContainer width="100%" height={300}>
@@ -44,7 +42,7 @@ export default function SalesChart() {
           formatter={(value) => [`S/ ${value}`, "Ventas"]}
           labelFormatter={(label) => `Hora: ${label}`}
         />
-        <Bar dataKey="ventas" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={50} />
+        <Bar dataKey="total" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={50} />
       </BarChart>
     </ResponsiveContainer>
   )

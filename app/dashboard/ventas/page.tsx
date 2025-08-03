@@ -7,15 +7,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Download, Plus, Search, ChevronDown, ChevronRight } from "lucide-react"
+import {
+  Download,
+  Plus,
+  Search,
+  ChevronDown,
+  ChevronRight,
+  Users,
+  Receipt,
+  User2,
+  FileText,
+} from "lucide-react"
 import { DateRangePicker } from "@/components/date-range-picker"
 import jsPDF from "jspdf"
-
+import autoTable from "jspdf-autotable"
 import { getBoletas } from "@/lib/api"
-import autoTable from 'jspdf-autotable';
-
-
-
 
 type ProductoVendido = {
   codBarras: string
@@ -40,11 +46,11 @@ type Boleta = {
 type Rango = { from: Date | undefined, to: Date | undefined }
 
 function arrayToCSV(rows: string[][]) {
-  return rows.map(row =>
-    row.map(cell =>
-      `"${(cell ?? "").replace(/"/g, '""')}"`
-    ).join(",")
-  ).join("\n")
+  return rows
+    .map(row =>
+      row.map(cell => `"${(cell ?? "").replace(/"/g, '""')}"`).join(",")
+    )
+    .join("\n")
 }
 
 function downloadCSV(filename: string, rows: string[][]) {
@@ -59,6 +65,20 @@ function downloadCSV(filename: string, rows: string[][]) {
   URL.revokeObjectURL(url)
 }
 
+function formatFechaHora(fechaString: string) {
+  if (!fechaString) return ""
+  const fecha = new Date(fechaString)
+  if (isNaN(fecha.getTime())) return fechaString
+  return `${fecha.getDate().toString().padStart(2, "0")}/${
+    (fecha.getMonth() + 1).toString().padStart(2, "0")
+  }/${fecha.getFullYear()} ${fecha.getHours().toString().padStart(2, "0")}:${
+    fecha.getMinutes().toString().padStart(2, "0")
+  }`
+}
+
+/**
+ * Exporta el listado de boletas a PDF con todos los campos correctos.
+ */
 function exportarBoletasPDF(boletasFiltradas: Boleta[]) {
   const doc = new jsPDF()
   doc.setFont("helvetica", "normal")
@@ -68,16 +88,63 @@ function exportarBoletasPDF(boletasFiltradas: Boleta[]) {
     startY: 22,
     styles: { fontSize: 10, cellPadding: 2 },
     head: [
-      ["Número", "Fecha", "Cliente", "Método de Pago", "Total", "Total de Compra", "Vuelto", "Usuario"]
+      ["Número", "Fecha", "Cliente", "Método de Pago", "Total de Compra", "Vuelto", "Usuario"]
     ],
     body: boletasFiltradas.map(b => [
-      b.numero, b.fecha, b.cliente, b.metodoPago ?? "", b.total, b.totalCompra ?? "", b.vuelto ?? "", b.usuario ?? ""
+      b.numero,
+      formatFechaHora(b.fecha),
+      b.cliente,
+      b.metodoPago ?? "",
+      b.totalCompra ?? "",   // Corregido: aquí va el total de compra
+      b.vuelto ?? "",
+      b.usuario ?? ""
     ]),
-    theme: "plain",
-    headStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: "bold" },
+    theme: "grid",
+    headStyles: { fillColor: [230, 244, 249], textColor: 20, fontStyle: "bold" },
     alternateRowStyles: { fillColor: [248, 248, 248] }
   })
   doc.save("boletas.pdf")
+}
+
+function descargarBoletaPDF(boleta: Boleta) {
+  const doc = new jsPDF()
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(18)
+  doc.text("Detalle de Boleta", 14, 18)
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(13)
+  const fechaFormateada = formatFechaHora(boleta.fecha)
+  const table1 = autoTable(doc, {
+    startY: 28,
+    theme: "plain",
+    margin: { left: 14 },
+    body: [
+      ["N° Boleta:", boleta.numero],
+      ["Fecha:", fechaFormateada],
+      ["Cliente:", boleta.cliente],
+      ["Método de Pago:", boleta.metodoPago ?? ""],
+      ["Total de Compra:", boleta.totalCompra ?? ""],
+      ["Vuelto:", boleta.vuelto ?? ""],
+      ["Usuario:", boleta.usuario ?? ""]
+    ],
+    styles: { cellPadding: 2, fontSize: 12, halign: "left" }
+  })
+  if (boleta.productos && boleta.productos.length > 0) {
+    autoTable(doc, {
+      startY: (table1 as any)?.finalY ? (table1 as any).finalY + 7 : 35,
+      head: [["Código", "Nombre", "Cantidad", "Precio"]],
+      body: boleta.productos.map(prod => [
+        prod.codBarras ?? "",
+        prod.nombre ?? "",
+        prod.cantidad ?? "",
+        prod.precio ?? ""
+      ]),
+      theme: "striped",
+      headStyles: { fillColor: [33, 150, 243], textColor: 255, fontStyle: "bold" },
+      styles: { fontSize: 11, halign: "center" }
+    })
+  }
+  doc.save(`${boleta.numero}.pdf`)
 }
 
 export default function VentasPage() {
@@ -94,20 +161,32 @@ export default function VentasPage() {
   }, [busquedaBoletas, rangoFechasBoletas])
 
   useEffect(() => {
-    // Ahora usamos la función getBoletas, no fetch('/api/boletas')
     const fetchBoletas = async () => {
       try {
+        // --- FILTRO DE FECHAS CORRECTO ---
+        // Si hay un rango, suma un día al "to" para incluir el día completo.
+        let from = rangoFechasBoletas.from
+          ? rangoFechasBoletas.from.toISOString().slice(0, 10)
+          : undefined
+        let to = rangoFechasBoletas.to
+          ? new Date(
+              rangoFechasBoletas.to.getFullYear(),
+              rangoFechasBoletas.to.getMonth(),
+              rangoFechasBoletas.to.getDate() + 1
+            ).toISOString().slice(0, 10)
+          : undefined
+
         const data = await getBoletas({
           page: paginaActual,
           limit: tamanoPagina,
           search: busquedaBoletas,
-          from: rangoFechasBoletas.from ? rangoFechasBoletas.from.toISOString().slice(0, 10) : undefined,
-          to: rangoFechasBoletas.to ? rangoFechasBoletas.to.toISOString().slice(0, 10) : undefined,
+          from,
+          to,
         });
         if (Array.isArray(data.boletas)) {
           const boletasAdaptadas = data.boletas.map((b: any) => ({
             ...b,
-            numero: b.numero ?? b.boleta ?? String(b.id),
+            numero: b.numero ?? b.boleta ?? "", // Asegura que el número de boleta esté bien
             fecha: b.fecha ?? b.fecha_venta ?? "",
             total: b.total ?? b.total_compra ?? "",
             totalCompra: b.totalCompra ?? b.total_compra ?? b.total ?? "",
@@ -138,7 +217,7 @@ export default function VentasPage() {
       ["Número", "Fecha", "Cliente", "Método de Pago", "Total", "Total de Compra", "Vuelto", "Usuario"],
       ...boletas.map(b => [
         String(b.numero),
-        "'" + String(b.fecha),
+        formatFechaHora(b.fecha),
         String(b.cliente),
         String(b.metodoPago ?? ""),
         String(b.total),
@@ -150,46 +229,15 @@ export default function VentasPage() {
     downloadCSV("boletas.csv", rows)
   }
 
-  function descargarBoletaPDF(boleta: Boleta) {
-    const doc = new jsPDF()
-    doc.setFont("helvetica", "normal")
-    doc.setFontSize(16)
-    doc.text(`Detalle de Boleta`, 14, 18)
-    doc.setFontSize(12)
-    const table1 = autoTable(doc, {
-      startY: 28,
-      theme: "plain",
-      body: [
-        ["Número:", boleta.numero],
-        ["Fecha:", boleta.fecha],
-        ["Cliente:", boleta.cliente],
-        ["Método de Pago:", boleta.metodoPago ?? ""],
-        ["Total de Compra:", boleta.totalCompra ?? ""],
-        ["Vuelto:", boleta.vuelto ?? ""],
-        ["Usuario:", boleta.usuario ?? ""]
-      ],
-      styles: { cellPadding: 2, fontSize: 12 }
-    }) as any
-    if (boleta.productos && boleta.productos.length > 0) {
-      autoTable(doc, {
-        startY: (table1?.finalY ?? 28) + 5,
-        head: [["Código", "Nombre", "Cantidad", "Precio"]],
-        body: boleta.productos.map(prod => [
-          prod.codBarras ?? "", prod.nombre ?? "", prod.cantidad ?? "", prod.precio ?? ""
-        ]),
-        theme: "striped",
-        styles: { fontSize: 10 }
-      })
-    }
-    doc.save(`${boleta.numero}.pdf`)
-  }
-
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-row items-center justify-between gap-4">
+      <div className="flex flex-row items-center justify-between gap-4 mb-1">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Gestión de Boletas</h1>
-          <p className="text-muted-foreground">Administra las boletas emitidas en el sistema</p>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <Receipt className="h-6 w-6 text-primary" />
+            Gestión de Boletas
+          </h1>
+          <p className="text-muted-foreground">Administra y busca todas las boletas emitidas</p>
         </div>
         <Button asChild>
           <Link href="/dashboard/ventas/nueva">
@@ -200,48 +248,59 @@ export default function VentasPage() {
       </div>
 
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle>Listado de Boletas</CardTitle>
-          <CardDescription>Visualiza y gestiona las boletas emitidas</CardDescription>
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-blue-500" />
+              Listado de Boletas
+            </CardTitle>
+            <CardDescription>Visualiza, busca y exporta todas las boletas de ventas</CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={exportarBoletas}>
+              <Download className="mr-2 h-4 w-4" />
+              Exportar CSV
+            </Button>
+            <Button variant="outline" onClick={() => exportarBoletasPDF(boletas)}>
+              <Download className="mr-2 h-4 w-4" />
+              Exportar PDF
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+          <div className="flex flex-col sm:flex-row gap-4 mb-6 mt-1">
             <div className="flex-1 flex flex-col sm:flex-row gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   type="search"
-                  placeholder="Buscar por número de boleta o cliente..."
+                  placeholder="Buscar por número de boleta, cliente o fecha..."
                   className="pl-8"
                   value={busquedaBoletas}
                   onChange={e => setBusquedaBoletas(e.target.value)}
+                  autoFocus
                 />
               </div>
               <DateRangePicker
                 value={
                   rangoFechasBoletas.from && rangoFechasBoletas.to
                     ? { from: rangoFechasBoletas.from, to: rangoFechasBoletas.to }
+                    : rangoFechasBoletas.from
+                    ? { from: rangoFechasBoletas.from, to: rangoFechasBoletas.from }
                     : undefined
                 }
-                onChange={range => setRangoFechasBoletas({
-                  from: range?.from,
-                  to: range?.to
-                })}
+                onChange={range => {
+                  if (range?.from && !range?.to) {
+                    setRangoFechasBoletas({ from: range.from, to: range.from })
+                  } else {
+                    setRangoFechasBoletas({ from: range?.from, to: range?.to })
+                  }
+                }}
               />
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={exportarBoletas}>
-                <Download className="mr-2 h-4 w-4" />
-                Exportar CSV
-              </Button>
-              <Button variant="outline" onClick={() => exportarBoletasPDF(boletas)}>
-                <Download className="mr-2 h-4 w-4" />
-                Exportar PDF
-              </Button>
             </div>
           </div>
 
-          {/* Controles de paginación arriba */}
+          {/* Paginación arriba */}
           <div className="flex items-center justify-between mb-2">
             <div>
               <label>
@@ -283,39 +342,51 @@ export default function VentasPage() {
             </div>
           </div>
 
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Número</TableHead>
+                  <TableHead className="whitespace-nowrap">N° Boleta</TableHead>
                   <TableHead>Fecha</TableHead>
                   <TableHead>Cliente</TableHead>
-                  <TableHead>Método de Pago</TableHead>
-                  <TableHead>Total de Compra</TableHead>
+                  <TableHead>Método Pago</TableHead>
+                  <TableHead>Total</TableHead>
                   <TableHead>Vuelto</TableHead>
                   <TableHead>Usuario</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead className="text-right">Detalles</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {boletas.length > 0 ? boletas.map(boleta => (
+                {boletas.length > 0 ? [...boletas].reverse().map(boleta => (
                   <React.Fragment key={boleta.id}>
-                    <TableRow key={boleta.id}>
-                      <TableCell>{boleta.numero}</TableCell>
-                      <TableCell>{boleta.fecha}</TableCell>
-                      <TableCell>{boleta.cliente}</TableCell>
+                    <TableRow className="transition hover:bg-blue-50/30">
+                      <TableCell className="font-bold text-blue-700">{boleta.numero}</TableCell>
+                      <TableCell>{formatFechaHora(boleta.fecha)}</TableCell>
+                      <TableCell>
+                        <span className="flex items-center gap-1">
+                          <User2 className="h-4 w-4 text-muted-foreground" />
+                          {boleta.cliente}
+                        </span>
+                      </TableCell>
                       <TableCell>
                         <Badge variant={
-                          (boleta.metodoPago ?? "").toLowerCase() === "efectivo" ? "default"
-                            : (["yape", "plin"].includes((boleta.metodoPago ?? "").toLowerCase())) ? "secondary"
+                          (boleta.metodoPago ?? "").toLowerCase() === "efectivo"
+                            ? "default"
+                            : ["yape", "plin"].includes((boleta.metodoPago ?? "").toLowerCase())
+                              ? "secondary"
                               : "outline"
                         }>
                           {boleta.metodoPago}
                         </Badge>
                       </TableCell>
-                      <TableCell>{boleta.totalCompra}</TableCell>
+                      <TableCell className="font-semibold">{boleta.totalCompra}</TableCell>
                       <TableCell>{boleta.vuelto}</TableCell>
-                      <TableCell>{boleta.usuario}</TableCell>
+                      <TableCell>
+                        <span className="flex items-center gap-1">
+                          <Users className="h-4 w-4 text-muted-foreground" />
+                          {boleta.usuario}
+                        </span>
+                      </TableCell>
                       <TableCell className="text-right flex flex-row gap-1 justify-end">
                         <Button
                           variant="ghost"
@@ -328,17 +399,14 @@ export default function VentasPage() {
                             : <ChevronRight className="h-4 w-4" />}
                           <span className="sr-only">{boletaExpandida === boleta.id ? "Ocultar" : "Ver más"}</span>
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => descargarBoletaPDF(boleta)}>
-                          <Download className="h-4 w-4" />
-                          <span className="sr-only">Descargar PDF</span>
-                        </Button>
+                        
                       </TableCell>
                     </TableRow>
                     {boletaExpandida === boleta.id && (
                       <TableRow key={boleta.id + "-expandida"}>
-                        <TableCell colSpan={9}>
-                          <div className="p-4 bg-muted rounded">
-                            <strong>Productos vendidos:</strong>
+                        <TableCell colSpan={8} className="bg-blue-50/20 p-0">
+                          <div className="p-3">
+                            <strong className="block mb-2 text-blue-800 text-sm">Productos vendidos:</strong>
                             <Table>
                               <TableHeader>
                                 <TableRow>
@@ -359,7 +427,7 @@ export default function VentasPage() {
                                 ))}
                                 {/* Fila: Total de Compra */}
                                 <TableRow>
-                                  <TableCell colSpan={3} className="font-semibold text-right">Total de Compra</TableCell>
+                                  <TableCell colSpan={3} className="font-semibold text-right">Total</TableCell>
                                   <TableCell className="font-semibold">{boleta.totalCompra}</TableCell>
                                 </TableRow>
                                 {/* Fila: Vuelto */}
@@ -376,7 +444,8 @@ export default function VentasPage() {
                   </React.Fragment>
                 )) : (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
+                      <Receipt className="inline h-5 w-5 opacity-60 mr-2" />
                       No se encontraron boletas.
                     </TableCell>
                   </TableRow>
@@ -385,11 +454,11 @@ export default function VentasPage() {
             </Table>
           </div>
 
-          {/* Controles de paginación abajo */}
+          {/* Paginación abajo */}
           <div className="flex items-center justify-between mt-2">
             <div>
               <span className="text-xs text-muted-foreground">
-                Mostrando {boletas.length} de {totalBoletas} boletas
+                Mostrando <b>{boletas.length}</b> de <b>{totalBoletas}</b> boletas
               </span>
             </div>
             <div className="flex items-center gap-2">

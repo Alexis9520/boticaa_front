@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Separator } from "@/components/ui/separator"
 import { useToast } from "@/hooks/use-toast"
-import { ArrowLeft, Minus, Plus, Search, Trash2, X, Package, Layers, Box } from "lucide-react"
+import { ArrowLeft, Minus, Plus, Search, Trash2, X, Layers, Package } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import TicketPrint from "@/components/TicketPrint"
 
@@ -71,6 +71,16 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
   } catch {
     return null
   }
+}
+
+// Generador de número único de boleta (local, para ejemplo)
+function generarNumeroBoleta(serie = "B") {
+  const now = new Date()
+  const yyyy = now.getFullYear()
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  const rand = Math.floor(Math.random() * 90000) + 10000 // 5 dígitos aleatorios
+  return `${serie}-${yyyy}${mm}${dd}-${rand}`
 }
 
 export default function NuevaVentaPage() {
@@ -157,7 +167,7 @@ export default function NuevaVentaPage() {
   useEffect(() => {
     const fetchProductos = async () => {
       try {
-        const data = await fetchWithAuth("http://localhost:8080/productos")
+        const data = await fetchWithAuth("http://51.161.10.179:8080/productos")
         setProductos(data)
       } catch (e) {
         toast({ title: "Error", description: "No se pudo cargar productos", variant: "destructive" })
@@ -187,7 +197,7 @@ export default function NuevaVentaPage() {
     }
   }, [toast, router]);
 
-  // NUEVO: Calcular total
+  // Calcular total de toda la venta:
   const total = carrito.reduce((sum, item) =>
     sum +
     ((item.precioVentaBlister ?? 0) * item.cantidadBlister) +
@@ -211,7 +221,7 @@ export default function NuevaVentaPage() {
     faltante = pagado < total ? total - pagado : 0
   }
 
-  // NUEVO: Formulario blister/unidad en resultados
+  // Formulario blister/unidad en resultados
   const [blisterUnidadSeleccion, setBlisterUnidadSeleccion] = useState<{ [codigo: string]: { blisters: number, unidades: number } }>({})
 
   const buscarProductos = () => {
@@ -232,7 +242,7 @@ export default function NuevaVentaPage() {
     }
   }
 
-  // NUEVO: Agregar al carrito considerando blisters y unidades
+  // Agregar al carrito considerando blisters y unidades
   const agregarAlCarrito = (producto: Producto) => {
     const seleccion = blisterUnidadSeleccion[producto.codigoBarras] || { blisters: 0, unidades: 0 }
     const cantidadTotal = (producto.cantidadUnidadesBlister ?? 0) * seleccion.blisters + seleccion.unidades
@@ -291,7 +301,7 @@ export default function NuevaVentaPage() {
     toast({ title: "Producto añadido", description: `Se agregó "${producto.nombre}" al carrito`, variant: "default" })
   }
 
-  // NUEVO: Cambiar cantidad de blisters/unidades en carrito
+  // Cambiar cantidad de blisters/unidades en carrito
   const cambiarCantidadCarrito = (codigoBarras: string, tipo: "blister" | "unidad", incremento: number) => {
     setCarrito(prev => {
       return prev.map(item => {
@@ -397,9 +407,11 @@ export default function NuevaVentaPage() {
     }
 
     const dniClienteEnviar = dniCliente && dniCliente.trim() !== "" ? dniCliente.trim() : "99999999"
+    const numeroBoleta = generarNumeroBoleta(configuracionBoleta.serieBoleta)
 
-    // Adaptar payload para backend
+    // Adaptar payload para backend (envía el número)
     const ventaDTO = {
+      numero: numeroBoleta,
       dniCliente: dniClienteEnviar,
       nombreCliente,
       dniVendedor: usuarioSesion.dni,
@@ -417,7 +429,7 @@ export default function NuevaVentaPage() {
     }
 
     try {
-      await fetchWithAuth("http://localhost:8080/api/ventas", {
+      await fetchWithAuth("http://51.161.10.179:8080/api/ventas", {
         method: "POST",
         body: JSON.stringify(ventaDTO),
       })
@@ -428,7 +440,7 @@ export default function NuevaVentaPage() {
         variant: "default",
       })
       try {
-        const productosRes = await fetchWithAuth("http://localhost:8080/productos")
+        const productosRes = await fetchWithAuth("http://51.161.10.179:8080/productos")
         setProductos(productosRes)
       } catch (e) {}
       setVentaGenerada({
@@ -438,7 +450,8 @@ export default function NuevaVentaPage() {
         nombreVendedor: usuarioSesion?.nombreCompleto,
         productos: carrito,
         total,
-        metodoPago: ventaDTO.metodoPago
+        metodoPago: ventaDTO.metodoPago,
+        numero: numeroBoleta,
       })
       setShowTicket(true)
       setCarrito([])
@@ -463,7 +476,6 @@ export default function NuevaVentaPage() {
     }
   }
 
-  // Visual: tabla de resultados y carrito mejorada para blisters
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -474,7 +486,6 @@ export default function NuevaVentaPage() {
           <h1 className="text-2xl font-bold tracking-tight">Nueva Venta</h1>
         </div>
       </div>
-
       {/* Datos cliente */}
       <Card className="mb-2">
         <CardHeader>
@@ -518,7 +529,6 @@ export default function NuevaVentaPage() {
           </div>
         </CardContent>
       </Card>
-
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
           <Card>
@@ -560,7 +570,6 @@ export default function NuevaVentaPage() {
                 </div>
                 <Button onClick={buscarProductos}>Buscar</Button>
               </div>
-
               {mostrarResultados && (
                 <div className="mt-4">
                   <div className="flex items-center justify-between mb-2">
@@ -750,7 +759,6 @@ export default function NuevaVentaPage() {
               )}
             </CardContent>
           </Card>
-
           <Card>
             <CardHeader className="pb-3">
               <CardTitle>Carrito de Compras</CardTitle>
@@ -858,7 +866,6 @@ export default function NuevaVentaPage() {
             </CardContent>
           </Card>
         </div>
-
         <div className="space-y-6">
           <Card>
             <CardHeader className="pb-3">
@@ -883,7 +890,6 @@ export default function NuevaVentaPage() {
                   <Label htmlFor="mixto">Mixto (Efectivo + Yape)</Label>
                 </div>
               </RadioGroup>
-
               {metodoPago === "efectivo" && (
                 <div className="space-y-2">
                   <Label htmlFor="monto-efectivo">Monto recibido</Label>
@@ -900,7 +906,6 @@ export default function NuevaVentaPage() {
                   )}
                 </div>
               )}
-
               {metodoPago === "yape" && (
                 <div className="space-y-2">
                   <Label htmlFor="monto-yape">Monto recibido (Yape)</Label>
@@ -917,7 +922,6 @@ export default function NuevaVentaPage() {
                   )}
                 </div>
               )}
-
               {metodoPago === "mixto" && (
                 <div className="space-y-4">
                   <div className="space-y-2">
@@ -949,7 +953,6 @@ export default function NuevaVentaPage() {
               )}
             </CardContent>
           </Card>
-
           <Card>
             <CardHeader className="pb-3">
               <CardTitle>Resumen de Venta</CardTitle>

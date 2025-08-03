@@ -36,7 +36,7 @@ export default function PerfilPage() {
   useEffect(() => {
     async function fetchUser() {
       try {
-        const data = await fetchWithAuth("http://localhost:8080/usuarios/me")
+        const data = await fetchWithAuth("http://51.161.10.179:8080/usuarios/me")
         setDatosPersonales({
           nombre_completo: data.nombreCompleto ?? "",
           horario_entrada: data.horarioEntrada ?? "",
@@ -59,7 +59,7 @@ export default function PerfilPage() {
   // Guardar cambios usando el backend protegido
   const guardarCambios = async () => {
     try {
-      await fetchWithAuth("http://localhost:8080/usuarios/me", {
+      await fetchWithAuth("http://51.161.10.179:8080/usuarios/me", {
         method: "PUT",
         body: JSON.stringify({
           nombreCompleto: datosPersonales.nombre_completo,

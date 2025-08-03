@@ -50,7 +50,7 @@ export default function StockPage() {
     setLoading(true)
     setError(null)
     try {
-      const data = await fetchWithAuth("http://localhost:8080/api/stock")
+      const data = await fetchWithAuth("http://51.161.10.179:8080/api/stock")
       setStock(data || [])
     } catch (err: any) {
       setError("No se pudo cargar el stock")
@@ -152,7 +152,7 @@ export default function StockPage() {
       return
     }
     setLoading(true)
-    const res = await fetchWithAuth(`http://localhost:8080/api/stock/${editandoStock.id}`, {
+    const res = await fetchWithAuth(`http://51.161.10.179:8080/api/stock/${editandoStock.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

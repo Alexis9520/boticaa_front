@@ -33,6 +33,7 @@ type VentaReciente = { boleta: string, cliente: string, monto: number }
 type ProductoMasVendido = { nombre: string, unidades: number, porcentaje: number }
 type ProductoCritico = { nombre: string, stock: number }
 type ProductoVencimiento = { nombre: string, dias: number }
+type VentasPorHora = { hora: string, total: number }
 
 export default function Dashboard() {
   const { user, loading } = useAuth()
@@ -46,6 +47,7 @@ export default function Dashboard() {
   const [productosMasVendidos, setProductosMasVendidos] = useState<ProductoMasVendido[]>([])
   const [productosCriticos, setProductosCriticos] = useState<ProductoCritico[]>([])
   const [productosVencimiento, setProductosVencimiento] = useState<ProductoVencimiento[]>([])
+  const [ventasPorHora, setVentasPorHora] = useState<VentasPorHora[]>([])
 
   useEffect(() => {
     if (!loading && user && user.rol === "trabajador") {
@@ -54,51 +56,67 @@ export default function Dashboard() {
   }, [user, loading, router])
 
   useEffect(() => {
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-  if (!token) {
-    // Mejor UX: redirige al login si no hay token
-    router.replace("/login");
-    return;
-  }
-  fetch("http://localhost:8080/api/dashboard/resumen", {
-    headers: {
-      Authorization: `Bearer ${token}`,
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!token) {
+      router.replace("/login");
+      return;
     }
-  })
-    .then(async (res) => {
-      if (res.status === 401) {
-        // Token expirado o inválido
-        localStorage.removeItem("token");
-        router.replace("/login");
-        return;
+    fetch("http://51.161.10.179:8080/api/dashboard/resumen", {
+      headers: {
+        Authorization: `Bearer ${token}`,
       }
-      if (res.status === 403) {
-        // Acceso denegado por rol
-        alert("No tienes permisos para ver este dashboard (Error 403: Forbidden)");
-        router.replace("/"); // O redirige donde prefieras
-        return;
-      }
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(errText || `Error en la petición: ${res.status}`);
-      }
-      return res.json();
     })
-    .then((data) => {
-      if (!data) return;
-      setVentasDia(data.ventasDia);
-      setVentasMes(data.ventasMes);
-      setSaldoCaja(data.saldoCaja);
-      setClientesAtendidos(data.clientesAtendidos);
-      setUltimasVentas(data.ultimasVentas);
-      setProductosMasVendidos(data.productosMasVendidos);
-      setProductosCriticos(data.productosCriticos);
-      setProductosVencimiento(data.productosVencimiento);
+      .then(async (res) => {
+        if (res.status === 401) {
+          localStorage.removeItem("token");
+          router.replace("/login");
+          return;
+        }
+        if (res.status === 403) {
+          alert("No tienes permisos para ver este dashboard (Error 403: Forbidden)");
+          router.replace("/");
+          return;
+        }
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(errText || `Error en la petición: ${res.status}`);
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (!data) return;
+        setVentasDia(data.ventasDia);
+        setVentasMes(data.ventasMes);
+        setSaldoCaja(data.saldoCaja);
+        setClientesAtendidos(data.clientesAtendidos);
+        setUltimasVentas(data.ultimasVentas);
+        setProductosMasVendidos(data.productosMasVendidos);
+        setProductosCriticos(data.productosCriticos);
+        setProductosVencimiento(data.productosVencimiento);
+      })
+      .catch((err) => {
+        console.error(err);
+      });
+  }, [router]);
+
+  useEffect(() => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!token) {
+      router.replace("/login");
+      return;
+    }
+    fetch("http://51.161.10.179:8080/api/dashboard/ventas-por-hora", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      }
     })
-    .catch((err) => {
-      console.error(err);
-    });
-}, [router]);
+      .then(async (res) => {
+        if (!res.ok) return [];
+        return res.json();
+      })
+      .then((data) => setVentasPorHora(data))
+      .catch(() => setVentasPorHora([]));
+  }, [router]);
 
   if (loading || !user) {
     return <Spinner />
@@ -109,7 +127,7 @@ export default function Dashboard() {
       <Spinner warning="" />
     )
   }
-return (
+  return (
     <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
@@ -134,7 +152,7 @@ return (
             <p className="text-xs text-muted-foreground flex items-center">
               <ArrowUpIcon className={`mr-1 h-4 w-4 ${ventasDia.variacion >= 0 ? "text-emerald-500" : "text-red-500"}`} />
               <span className={ventasDia.variacion >= 0 ? "text-emerald-500" : "text-red-500"}>
-                {ventasDia.variacion >= 0 ? "+" : ""}{ventasDia.variacion}%
+                {ventasDia.variacion >= 0 ? "+" : ""}{ventasDia.variacion.toFixed(2)}%
               </span> desde ayer
             </p>
           </CardContent>
@@ -151,7 +169,7 @@ return (
             <p className="text-xs text-muted-foreground flex items-center">
               <ArrowUpIcon className={`mr-1 h-4 w-4 ${ventasMes.variacion >= 0 ? "text-emerald-500" : "text-red-500"}`} />
               <span className={ventasMes.variacion >= 0 ? "text-emerald-500" : "text-red-500"}>
-                {ventasMes.variacion >= 0 ? "+" : ""}{ventasMes.variacion}%
+                {ventasMes.variacion >= 0 ? "+" : ""}{ventasMes.variacion.toFixed(2)}%
               </span> desde el mes pasado
             </p>
           </CardContent>
@@ -185,7 +203,7 @@ return (
                 <ArrowDownIcon className="mr-1 h-4 w-4 text-red-500" />
               )}
               <span className={clientesAtendidos.variacion >= 0 ? "text-emerald-500" : "text-red-500"}>
-                {clientesAtendidos.variacion >= 0 ? "+" : ""}{clientesAtendidos.variacion}%
+                {clientesAtendidos.variacion >= 0 ? "+" : ""}{clientesAtendidos.variacion.toFixed(2)}%
               </span> desde ayer
             </p>
           </CardContent>
@@ -205,7 +223,7 @@ return (
                 <CardDescription>Ventas realizadas en las últimas 24 horas</CardDescription>
               </CardHeader>
               <CardContent className="pl-2">
-                <SalesChart />
+                <SalesChart data={ventasPorHora} />
               </CardContent>
             </Card>
             <Card className="col-span-3">

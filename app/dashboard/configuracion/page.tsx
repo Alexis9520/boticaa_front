@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useTheme } from "next-themes"
-import { AlertCircle, Check, Moon, Printer, Save, Settings, Sun } from "lucide-react"
+import { AlertCircle, Wrench, Check, Moon, Printer, Save, Settings, Sun } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
@@ -274,104 +274,18 @@ export default function ConfiguracionPage() {
                 <CardDescription>Personaliza las alertas y notificaciones del sistema</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>Información</AlertTitle>
+
+                {/* AVISO DE EN DESARROLLO */}
+                <Alert variant="destructive">
+                  <Wrench className="h-5 w-5" />
+                  <AlertTitle>¡En desarrollo!</AlertTitle>
                   <AlertDescription>
-                    Las notificaciones se mostrarán en el sistema y pueden enviarse por correo electrónico si se
-                    configura.
+                    La sección de notificaciones está en desarrollo. Pronto podrás personalizar más opciones y recibir alertas inteligentes.
                   </AlertDescription>
                 </Alert>
 
-                <div className="space-y-4 pt-2">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label htmlFor="stock-bajo">Alertas de stock bajo</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Notificar cuando un producto alcance su nivel mínimo de stock
-                      </p>
-                    </div>
-                    <Switch
-                      id="stock-bajo"
-                      checked={configuracionNotificaciones.stockBajo}
-                      onCheckedChange={(checked) =>
-                        setConfiguracionNotificaciones({ ...configuracionNotificaciones, stockBajo: checked })
-                      }
-                    />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label htmlFor="proximos-vencer">Productos próximos a vencer</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Notificar cuando un producto esté próximo a su fecha de vencimiento
-                      </p>
-                    </div>
-                    <Switch
-                      id="proximos-vencer"
-                      checked={configuracionNotificaciones.proximosVencer}
-                      onCheckedChange={(checked) =>
-                        setConfiguracionNotificaciones({ ...configuracionNotificaciones, proximosVencer: checked })
-                      }
-                    />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label htmlFor="ventas-altas">Ventas altas</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Notificar cuando se detecte un incremento significativo en las ventas
-                      </p>
-                    </div>
-                    <Switch
-                      id="ventas-altas"
-                      checked={configuracionNotificaciones.ventasAltas}
-                      onCheckedChange={(checked) =>
-                        setConfiguracionNotificaciones({ ...configuracionNotificaciones, ventasAltas: checked })
-                      }
-                    />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label htmlFor="cierre-caja">Cierre de caja</Label>
-                      <p className="text-sm text-muted-foreground">Notificar cuando se realice un cierre de caja</p>
-                    </div>
-                    <Switch
-                      id="cierre-caja"
-                      checked={configuracionNotificaciones.cierreCaja}
-                      onCheckedChange={(checked) =>
-                        setConfiguracionNotificaciones({ ...configuracionNotificaciones, cierreCaja: checked })
-                      }
-                    />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label htmlFor="nuevos-usuarios">Nuevos usuarios</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Notificar cuando se registre un nuevo usuario en el sistema
-                      </p>
-                    </div>
-                    <Switch
-                      id="nuevos-usuarios"
-                      checked={configuracionNotificaciones.nuevosUsuarios}
-                      onCheckedChange={(checked) =>
-                        setConfiguracionNotificaciones({ ...configuracionNotificaciones, nuevosUsuarios: checked })
-                      }
-                    />
-                  </div>
-                </div>
+                
 
-                <div className="flex justify-end gap-2 pt-4">
-                  <Button variant="outline" onClick={resetearConfiguracion}>
-                    Restablecer
-                  </Button>
-                  <Button onClick={guardarConfiguracionNotificaciones}>
-                    <Save className="mr-2 h-4 w-4" />
-                    Guardar cambios
-                  </Button>
-                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -415,10 +329,6 @@ export default function ConfiguracionPage() {
                     </Button>
                   </div>
                 </div>
-
-                
-
-                
               </CardContent>
             </Card>
           </TabsContent>
