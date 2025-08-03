@@ -134,7 +134,7 @@ export default function CajaPage() {
     setError(null)
     try {
       // Resumen y movimientos
-      const data = await fetchWithToken(`http://51.161.10.179/api/cajas/actual?dniUsuario=${usuario.dni}`)
+      const data = await fetchWithToken(`http://51.161.10.179:8080/api/cajas/actual?dniUsuario=${usuario.dni}`)
       setResumen(data ? {
         efectivo: data.efectivo ?? 0,
         totalYape: data.totalYape ?? 0,
