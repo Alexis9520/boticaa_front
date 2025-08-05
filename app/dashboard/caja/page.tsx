@@ -134,7 +134,7 @@ export default function CajaPage() {
     setError(null)
     try {
       // Resumen y movimientos
-      const data = await fetchWithToken(`http://51.161.10.179:8080/api/cajas/actual?dniUsuario=${usuario.dni}`)
+      const data = await fetchWithToken(`http://62.169.28.77:8080/api/cajas/actual?dniUsuario=${usuario.dni}`)
       setResumen(data ? {
         efectivo: data.efectivo ?? 0,
         totalYape: data.totalYape ?? 0,
@@ -158,10 +158,10 @@ export default function CajaPage() {
       setEfectivoInicial((data?.efectivoInicial ?? 0).toFixed(2))
       setEfectivoFinalDeclarado("")
       // Historial
-      const hist = await fetchWithToken("http://51.161.10.179:8080/api/cajas/historial")
+      const hist = await fetchWithToken("http://62.169.28.77:8080/api/cajas/historial")
       setHistorial(hist ?? [])
       // Alerta cajas abiertas
-      const cajas = await fetchWithToken("http://51.161.10.179:8080/api/cajas/abiertas")
+      const cajas = await fetchWithToken("http://62.169.28.77:8080/api/cajas/abiertas")
       setAlertaCajaAbierta(Array.isArray(cajas) && cajas.length > 0)
     } catch (e: any) {
       setError("Error al refrescar datos: " + (e?.message || "desconocido"))
@@ -236,7 +236,7 @@ export default function CajaPage() {
     }
     setLoading(true)
     try {
-      await fetchWithToken("http://51.161.10.179:8080/api/cajas/abrir", {
+      await fetchWithToken("http://62.169.28.77:8080/api/cajas/abrir", {
         method: "POST",
         body: JSON.stringify({ dniUsuario: usuario.dni, efectivoInicial: Number.parseFloat(efectivoInicial) }),
       })
@@ -259,7 +259,7 @@ export default function CajaPage() {
     }
     setLoading(true)
     try {
-      await fetchWithToken("http://51.161.10.179:8080/api/cajas/cerrar", {
+      await fetchWithToken("http://62.169.28.77:8080/api/cajas/cerrar", {
         method: "POST",
         body: JSON.stringify({ dniUsuario: usuario.dni, efectivoFinalDeclarado: Number.parseFloat(efectivoFinalDeclarado) }),
       })
@@ -284,7 +284,7 @@ export default function CajaPage() {
     }
     setLoading(true)
     try {
-      await fetchWithToken("http://51.161.10.179:8080/api/cajas/movimiento", {
+      await fetchWithToken("http://62.169.28.77:8080/api/cajas/movimiento", {
         method: "POST",
         body: JSON.stringify({ ...mov, monto: Number.parseFloat(mov.monto), dniUsuario: usuario.dni }),
       })

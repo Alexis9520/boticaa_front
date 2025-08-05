@@ -1,5 +1,5 @@
 export async function login(dni: string, password: string): Promise<boolean> {
-  const res = await fetch("http://51.161.10.179:8080/auth/login", {
+  const res = await fetch("http://62.169.28.77:8080/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dni, contrasena: password }),
@@ -13,7 +13,7 @@ export async function login(dni: string, password: string): Promise<boolean> {
       localStorage.setItem("token", data.token);
 
       // Obtener usuario y guardar en localStorage
-      const userRes = await fetch("http://51.161.10.179:8080/usuarios/me", {
+      const userRes = await fetch("http://62.169.28.77:8080/usuarios/me", {
         headers: {
           Authorization: `Bearer ${data.token}`,
         },
@@ -33,7 +33,7 @@ export async function checkSession() {
   const token = localStorage.getItem("token");
   if (!token) throw new Error("No token");
 
-  const res = await fetch("http://51.161.10.179:8080/usuarios/me", {
+  const res = await fetch("http://62.169.28.77:8080/usuarios/me", {
     headers: {
       Authorization: `Bearer ${token}`,
     },

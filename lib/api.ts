@@ -40,17 +40,17 @@ export async function fetchWithAuth(url: string, options: RequestInit = {}) {
 
 // Obtener listado de productos
 export async function getProductos() {
-  return fetchWithAuth("http://51.161.10.179:8080/productos");
+  return fetchWithAuth("http://62.169.28.77:8080/productos");
 }
 
 // Obtener historial de cajas
 export async function getHistorial() {
-  return fetchWithAuth("http://51.161.10.179:8080/api/cajas/historial");
+  return fetchWithAuth("http://62.169.28.77:8080/api/cajas/historial");
 }
 
 // Agregar movimiento a caja
 export async function agregarMovimiento(data: any) {
-  return fetchWithAuth("http://51.161.10.179:8080/api/cajas/movimiento", {
+  return fetchWithAuth("http://62.169.28.77:8080/api/cajas/movimiento", {
     method: "POST",
     body: JSON.stringify(data),
     headers: { "Content-Type": "application/json" },
@@ -61,7 +61,7 @@ export async function agregarMovimiento(data: any) {
 export async function fetchWithToken() {
   const usuarioStr = typeof window !== "undefined" ? localStorage.getItem("usuario") : null;
   const usuario = usuarioStr ? JSON.parse(usuarioStr) : {};
-  return fetchWithAuth(`http://51.161.10.179:8080/api/cajas/actual?dniUsuario=${usuario.dni}`);
+  return fetchWithAuth(`http://62.169.28.77:8080/api/cajas/actual?dniUsuario=${usuario.dni}`);
 }
 
 // Obtener boletas con filtros (page, limit, search, from, to)
@@ -79,13 +79,13 @@ export async function getBoletas({ page, limit, search, from, to }: {
     ...(from ? { from } : {}),
     ...(to ? { to } : {})
   });
-  return fetchWithAuth(`http://51.161.10.179:8080/api/boletas?${params}`);
+  return fetchWithAuth(`http://62.169.28.77:8080/api/boletas?${params}`);
 }
 
 // Nuevo: Crear producto (POST)
 // data debe ser el objeto ProductoRequest (ver backend)
 export async function crearProducto(data: any) {
-  return fetchWithAuth("http://51.161.10.179:8080/productos/nuevo", {
+  return fetchWithAuth("http://62.169.28.77:8080/productos/nuevo", {
     method: "POST",
     body: JSON.stringify(data),
     headers: { "Content-Type": "application/json" },
@@ -94,7 +94,7 @@ export async function crearProducto(data: any) {
 
 // Nuevo: Actualizar producto por código de barras (PUT)
 export async function actualizarProducto(codigoBarras: string, data: any) {
-  return fetchWithAuth(`http://51.161.10.179:8080/productos/${codigoBarras}`, {
+  return fetchWithAuth(`http://62.169.28.77:8080/productos/${codigoBarras}`, {
     method: "PUT",
     body: JSON.stringify(data),
     headers: { "Content-Type": "application/json" },
@@ -103,19 +103,19 @@ export async function actualizarProducto(codigoBarras: string, data: any) {
 
 // Nuevo: Eliminar producto por código de barras (DELETE)
 export async function eliminarProducto(codigoBarras: string) {
-  return fetchWithAuth(`http://51.161.10.179:8080/productos/${codigoBarras}`, {
+  return fetchWithAuth(`http://62.169.28.77:8080/productos/${codigoBarras}`, {
     method: "DELETE"
   });
 }
 
 // Obtener stock protegido por token
 export async function getStock() {
-  return fetchWithAuth("http://51.161.10.179:8080/api/stock");
+  return fetchWithAuth("http://62.169.28.77:8080/api/stock");
 }
 
 // Actualizar stock protegido por token
 export async function actualizarStock(id: number, data: any) {
-  return fetchWithAuth(`http://51.161.10.179:8080/api/stock/${id}`, {
+  return fetchWithAuth(`http://62.169.28.77:8080/api/stock/${id}`, {
     method: "PUT",
     body: JSON.stringify(data),
     headers: { "Content-Type": "application/json" },
@@ -124,5 +124,5 @@ export async function actualizarStock(id: number, data: any) {
 
 // Obtener resumen del dashboard protegido por JWT
 export async function getDashboardResumen() {
-  return fetchWithAuth("http://51.161.10.179:8080/api/dashboard/resumen");
+  return fetchWithAuth("http://62.169.28.77:8080/api/dashboard/resumen");
 }

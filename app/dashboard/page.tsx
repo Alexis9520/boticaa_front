@@ -61,7 +61,7 @@ export default function Dashboard() {
       router.replace("/login");
       return;
     }
-    fetch("http://51.161.10.179:8080/api/dashboard/resumen", {
+    fetch("http://62.169.28.77:8080/api/dashboard/resumen", {
       headers: {
         Authorization: `Bearer ${token}`,
       }
@@ -105,7 +105,7 @@ export default function Dashboard() {
       router.replace("/login");
       return;
     }
-    fetch("http://51.161.10.179:8080/api/dashboard/ventas-por-hora", {
+    fetch("http://62.169.28.77:8080/api/dashboard/ventas-por-hora", {
       headers: {
         Authorization: `Bearer ${token}`,
       }

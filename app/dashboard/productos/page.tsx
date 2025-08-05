@@ -50,7 +50,7 @@ type Producto = {
   stocks?: StockLote[]
 }
 
-const BACKEND_URL = "http://51.161.10.179:8080"
+const BACKEND_URL = "http://62.169.28.77:8080"
 
 export default function ProductosPage() {
   const [productos, setProductos] = useState<Producto[]>([])

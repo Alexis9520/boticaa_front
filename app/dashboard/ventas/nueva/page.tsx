@@ -167,7 +167,7 @@ export default function NuevaVentaPage() {
   useEffect(() => {
     const fetchProductos = async () => {
       try {
-        const data = await fetchWithAuth("http://51.161.10.179:8080/productos")
+        const data = await fetchWithAuth("http://62.169.28.77:8080/productos")
         setProductos(data)
       } catch (e) {
         toast({ title: "Error", description: "No se pudo cargar productos", variant: "destructive" })
@@ -429,7 +429,7 @@ export default function NuevaVentaPage() {
     }
 
     try {
-      await fetchWithAuth("http://51.161.10.179:8080/api/ventas", {
+      await fetchWithAuth("http://62.169.28.77:8080/api/ventas", {
         method: "POST",
         body: JSON.stringify(ventaDTO),
       })
@@ -440,7 +440,7 @@ export default function NuevaVentaPage() {
         variant: "default",
       })
       try {
-        const productosRes = await fetchWithAuth("http://51.161.10.179:8080/productos")
+        const productosRes = await fetchWithAuth("http://62.169.28.77:8080/productos")
         setProductos(productosRes)
       } catch (e) {}
       setVentaGenerada({
