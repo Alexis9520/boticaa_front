@@ -29,9 +29,9 @@ const developers = [
     "rol": "Full Stack Developer",
     "bio": "Desarrollador full stack con experiencia en el desarrollo de aplicaciones empresariales usando Java y Spring Boot. Experto en la creación de APIs REST, integración con bases de datos MySQL y despliegue en VPS. Manejo profesional de control de versiones con Git y buenas prácticas de backend.",
     "avatar": avatarByRole["Full Stack Developer"],
-    "github": "https://github.com/miguelcastillovalero",
-    "linkedin": "https://linkedin.com/in/miguelcastillovalero",
-    "email": "miguel.castillo@email.com",
+    "github": "https://github.com/LoP-1",
+    "linkedin": "https://www.linkedin.com/in/miguel-castillo-v/",
+    "email": "miguel.castillo.valero@gmail.com",
     "web": "",
     "stack": ["Java", "Spring Boot", "API REST", "MySQL", "Git", "VPS Deployment"]
   },
@@ -41,8 +41,8 @@ const developers = [
     "bio": "Desarrollador frontend especializado en React, TypeScript y Angular. Enfocado en construir interfaces modernas, accesibles y optimizadas. Apasionado por la experiencia de usuario, el diseño responsivo y el uso eficiente de tecnologías web como HTML, CSS y JavaScript.",
     "avatar": avatarByRole["Frontend Developer"],
     "github": "https://github.com/Alexis9520",
-    "linkedin": "https://linkedin.com/in/alexisromani",
-    "email": "alexis.romani@email.com",
+    "linkedin": "https://www.linkedin.com/in/alexis-roman%C3%AD-maravi-0a51a9211/",
+    "email": "alexisdasiel@gmail.com",
     "web": "",
     "stack": ["React", "TypeScript", "HTML", "JavaScript", "Angular", "CSS"]
   }
