@@ -1,12 +1,23 @@
-// Función util para cualquier endpoint protegido
-export async function fetchWithAuth(url: string, options: RequestInit = {}) {
-  // Obtiene el token JWT desde localStorage
+type ToastFn = (opts: { title: string; description: string; variant?: "destructive" | "default" }) => void;
+
+// Ahora acepta un toastFn opcional
+export async function fetchWithAuth(
+  url: string,
+  options: RequestInit = {},
+  toastFn?: ToastFn
+) {
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
   if (!token) {
+    if (toastFn) {
+      toastFn({
+        title: "Sesión expirada",
+        description: "Por favor inicia sesión nuevamente.",
+        variant: "destructive",
+      });
+    }
     window.location.href = "/login";
     throw new Error("No token");
   }
-  // Construye los headers con Authorization Bearer
   const headers = {
     ...(options.headers || {}),
     Authorization: `Bearer ${token}`,
@@ -15,16 +26,78 @@ export async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const res = await fetch(url, { ...options, headers });
 
   if (!res.ok) {
-    if (res.status === 401) {
-      // Token expirado o inválido
-      localStorage.removeItem("token");
-      window.location.href = "/login";
+    let errorText = await res.text();
+    let backendMsg = "";
+    try {
+      const json = JSON.parse(errorText);
+      backendMsg = json.message || errorText;
+    } catch {
+      backendMsg = errorText;
     }
-    const errorText = await res.text();
-    throw new Error(errorText || `Error en la petición: ${res.status}`);
+
+    const lowerMsg = backendMsg.toLowerCase();
+
+    // 1. Caso: CERRAR TU CAJA (aunque incluya "fuera de horario" o similar)
+    if (res.status === 403 && lowerMsg.includes("cerrar tu caja")) {
+      if (toastFn) {
+        toastFn({
+          title: "Atención",
+          description: backendMsg,
+          variant: "destructive",
+        });
+      }
+      // Solo redirige si NO estás ya en /dashboard/caja
+      if (typeof window !== "undefined" && window.location.pathname !== "/dashboard/caja") {
+        window.location.href = "/dashboard/caja";
+      }
+      // NO borres el token ni redirijas al login, solo retorna null para que la UI lo maneje
+      return null;
+    }
+
+    // 2. Caso: FUERA DE HORARIO SIN "cerrar tu caja"
+    if (
+      res.status === 403 &&
+      (lowerMsg.includes("fuera de tu horario") || lowerMsg.includes("fuera de horario"))
+    ) {
+      if (toastFn) {
+        toastFn({
+          title: "Acceso fuera de turno",
+          description: backendMsg,
+          variant: "destructive",
+        });
+      }
+      localStorage.removeItem("token");
+      localStorage.removeItem("usuario");
+      window.location.href = "/login";
+      throw new Error(backendMsg);
+    }
+
+    // 3. Caso: 401 (token inválido)
+    if (res.status === 401) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("usuario");
+      if (toastFn) {
+        toastFn({
+          title: "Sesión expirada",
+          description: "Por seguridad, inicia sesión nuevamente.",
+          variant: "destructive",
+        });
+      }
+      window.location.href = "/login";
+      throw new Error("Sesión expirada");
+    }
+
+    // 4. Otros errores
+    if (toastFn) {
+      toastFn({
+        title: "Error",
+        description: backendMsg || `Error en la petición: ${res.status}`,
+        variant: "destructive",
+      });
+    }
+    throw new Error(backendMsg || `Error en la petición: ${res.status}`);
   }
 
-  // Manejar respuestas vacías para métodos como DELETE
   const contentLength = res.headers.get("content-length");
   if (res.status === 204 || contentLength === "0") {
     return null;

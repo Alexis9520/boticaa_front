@@ -1,11 +1,24 @@
-export async function login(dni: string, password: string): Promise<boolean> {
+export async function login(dni: string, password: string): Promise<{ ok: boolean, error?: string }> {
   const res = await fetch("http://62.169.28.77:8080/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dni, contrasena: password }),
   });
 
-  if (!res.ok) return false;
+  if (!res.ok) {
+    let backendMsg = "";
+    try {
+      const data = await res.json();
+      backendMsg = data.message || JSON.stringify(data) || "Error de autenticación";
+    } catch {
+      try {
+        backendMsg = await res.text();
+      } catch {
+        backendMsg = "Error de autenticación";
+      }
+    }
+    return { ok: false, error: backendMsg };
+  }
 
   const data = await res.json();
   if (data.token) {
@@ -23,9 +36,9 @@ export async function login(dni: string, password: string): Promise<boolean> {
         localStorage.setItem("usuario", JSON.stringify(usuario));
       }
     }
-    return true;
+    return { ok: true };
   }
-  return false;
+  return { ok: false, error: "Token no recibido" };
 }
 
 export async function checkSession() {

@@ -324,7 +324,7 @@ export default function StockPage() {
                       <TableHead>Laboratorio</TableHead>
                       <TableHead>Categoría</TableHead>
                       <TableHead>Vencimiento</TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
+                      
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -389,12 +389,7 @@ export default function StockPage() {
                               </div>
                             </div>
                           </TableCell>
-                          <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" onClick={() => editarStock(item)}>
-                              <Edit className="h-4 w-4" />
-                              <span className="sr-only">Editar</span>
-                            </Button>
-                          </TableCell>
+                          
                         </TableRow>
                       )
                     })}
@@ -433,7 +428,7 @@ export default function StockPage() {
                           <TableHead>Stock Actual</TableHead>
                           <TableHead>Stock Mínimo</TableHead>
                           <TableHead>Diferencia</TableHead>
-                          <TableHead className="text-right">Acciones</TableHead>
+                          
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -450,12 +445,7 @@ export default function StockPage() {
                             <TableCell className="text-red-600">
                               -{item.cantidadMinima - item.cantidadUnidades} unidades
                             </TableCell>
-                            <TableCell className="text-right">
-                              <Button variant="ghost" size="icon" onClick={() => editarStock(item)}>
-                                <Edit className="h-4 w-4" />
-                                <span className="sr-only">Editar</span>
-                              </Button>
-                            </TableCell>
+                            
                           </TableRow>
                         ))}
                       </TableBody>
@@ -497,7 +487,7 @@ export default function StockPage() {
                           <TableHead>Stock</TableHead>
                           <TableHead>Fecha Vencimiento</TableHead>
                           <TableHead>Días Restantes</TableHead>
-                          <TableHead className="text-right">Acciones</TableHead>
+                          
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -521,12 +511,7 @@ export default function StockPage() {
                                   {diasVencimiento} días
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-right">
-                                <Button variant="ghost" size="icon" onClick={() => editarStock(item)}>
-                                  <Edit className="h-4 w-4" />
-                                  <span className="sr-only">Editar</span>
-                                </Button>
-                              </TableCell>
+                              
                             </TableRow>
                           )
                         })}
@@ -553,7 +538,7 @@ export default function StockPage() {
                               <TableHead>Stock</TableHead>
                               <TableHead>Fecha Vencimiento</TableHead>
                               <TableHead>Días Restantes</TableHead>
-                              <TableHead className="text-right">Acciones</TableHead>
+                              
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -567,12 +552,7 @@ export default function StockPage() {
                                 <TableCell>
                                   <Badge variant="destructive">Vencido</Badge>
                                 </TableCell>
-                                <TableCell className="text-right">
-                                  <Button variant="ghost" size="icon" onClick={() => editarStock(item)}>
-                                    <Edit className="h-4 w-4" />
-                                    <span className="sr-only">Editar</span>
-                                  </Button>
-                                </TableCell>
+                                
                               </TableRow>
                             ))}
                           </TableBody>
@@ -587,76 +567,7 @@ export default function StockPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Dialog para editar stock */}
-      <Dialog open={!!editandoStock} onOpenChange={() => setEditandoStock(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Editar Stock</DialogTitle>
-            <DialogDescription>Modifica la información del stock del producto</DialogDescription>
-          </DialogHeader>
-          {editandoStock && (
-            <form className="grid gap-4 py-4" onSubmit={e => { e.preventDefault(); guardarEdicion() }}>
-              <div className="space-y-2">
-                <Label>Producto</Label>
-                <div className="text-sm font-medium">{editandoStock.nombre}</div>
-                <div className="text-sm text-muted-foreground">Código: {editandoStock.codigoBarras}</div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-cantidad">Cantidad *</Label>
-                  <Input
-                    id="edit-cantidad"
-                    type="number"
-                    value={editandoStock.cantidadUnidades}
-                    min={0}
-                    onChange={(e) => setEditandoStock({ ...editandoStock, cantidadUnidades: Number(e.target.value) })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-cantidad-minima">Cantidad mínima (stock mínimo)</Label>
-                  <Input
-                    id="edit-cantidad-minima"
-                    type="number"
-                    value={editandoStock.cantidadMinima}
-                    min={0}
-                    onChange={(e) => setEditandoStock({ ...editandoStock, cantidadMinima: Number(e.target.value) })}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-precio-compra">Precio de compra *</Label>
-                  <Input
-                    id="edit-precio-compra"
-                    type="number"
-                    step="0.01"
-                    value={editandoStock.precioCompra}
-                    min={0}
-                    onChange={(e) => setEditandoStock({ ...editandoStock, precioCompra: Number(e.target.value) })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-fecha-vencimiento">Fecha de vencimiento</Label>
-                  <Input
-                    id="edit-fecha-vencimiento"
-                    type="date"
-                    value={editandoStock.fechaVencimiento}
-                    onChange={(e) => setEditandoStock({ ...editandoStock, fechaVencimiento: e.target.value })}
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setEditandoStock(null)} type="button">
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={loading}>{loading ? "Guardando..." : "Guardar Cambios"}</Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
+      
     </div>
   )
 }

@@ -6,6 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { ComboBoxCategoria } from "@/components/ComboBoxCategoria";
+
 import {
   Dialog,
   DialogContent,
@@ -28,6 +30,7 @@ import { fetchWithAuth } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 
 type StockLote = {
+  codigoStock?: string  // NUEVO: para identificar el lote
   cantidadUnidades: number
   fechaVencimiento: string
   precioCompra: number
@@ -52,6 +55,11 @@ type Producto = {
 
 const BACKEND_URL = "http://62.169.28.77:8080"
 
+function generarCodigoLote(producto: Producto, index: number) {
+  // Puedes mejorar esto según tu lógica
+  return `${producto.codigoBarras}-${index + 1}`
+}
+
 export default function ProductosPage() {
   const [productos, setProductos] = useState<Producto[]>([])
   const [busqueda, setBusqueda] = useState("")
@@ -71,6 +79,7 @@ export default function ProductosPage() {
     stocks: [] as StockLote[],
   })
   const [nuevoLote, setNuevoLote] = useState<StockLote>({
+    codigoStock: "",
     cantidadUnidades: 0,
     fechaVencimiento: "",
     precioCompra: 0,
@@ -122,7 +131,22 @@ export default function ProductosPage() {
   )
 
   const agregarProducto = async () => {
-    const stocks = (nuevoProducto.stocks || []).map(lote => ({
+    const stocks = (nuevoProducto.stocks || []).map((lote, idx) => ({
+      codigoStock: lote.codigoStock || generarCodigoLote({
+        id: 0,
+        codigoBarras: nuevoProducto.codigo_barras,
+        nombre: nuevoProducto.nombre,
+        concentracion: nuevoProducto.concentracion,
+        cantidadGeneral: Number(nuevoProducto.cantidad_general) || 0,
+        precioVentaUnd: Number(nuevoProducto.precio_venta_und) || 0,
+        descuento: Number(nuevoProducto.descuento) || 0,
+        laboratorio: nuevoProducto.laboratorio,
+        categoria: nuevoProducto.categoria,
+        cantidadMinima: Number(nuevoProducto.cantidad_minima) || 0,
+        cantidadUnidadesBlister: Number(nuevoProducto.cantidad_unidades_blister) || 0,
+        precioVentaBlister: Number(nuevoProducto.precio_venta_blister) || 0,
+        stocks: [],
+      }, idx),
       cantidadUnidades: Number(lote.cantidadUnidades) || 0,
       fechaVencimiento: lote.fechaVencimiento,
       precioCompra: Number(lote.precioCompra) || 0,
@@ -180,6 +204,7 @@ export default function ProductosPage() {
           stocks: [],
         });
         setNuevoLote({
+          codigoStock: "",
           cantidadUnidades: 0,
           fechaVencimiento: "",
           precioCompra: 0,
@@ -203,9 +228,9 @@ export default function ProductosPage() {
     }
     setNuevoProducto({
       ...nuevoProducto,
-      stocks: [...(nuevoProducto.stocks || []), { ...nuevoLote }]
+      stocks: [...(nuevoProducto.stocks || []), { ...nuevoLote, codigoStock: nuevoLote.codigoStock || `L${(nuevoProducto.stocks.length+1).toString().padStart(2, '0')}` }]
     })
-    setNuevoLote({ cantidadUnidades: 0, fechaVencimiento: "", precioCompra: 0 })
+    setNuevoLote({ codigoStock: "", cantidadUnidades: 0, fechaVencimiento: "", precioCompra: 0 })
   }
 
   const eliminarLoteDeNuevo = (index: number) => {
@@ -229,7 +254,8 @@ export default function ProductosPage() {
       categoria: producto.categoria,
       cantidad_unidades_blister: producto.cantidadUnidadesBlister?.toString() || "",
       precio_venta_blister: producto.precioVentaBlister?.toString() || "",
-      stocks: (producto.stocks || []).map(lote => ({
+      stocks: (producto.stocks || []).map((lote, idx) => ({
+        codigoStock: lote.codigoStock || generarCodigoLote(producto, idx),
         cantidadUnidades: lote.cantidadUnidades,
         fechaVencimiento: lote.fechaVencimiento,
         precioCompra: lote.precioCompra,
@@ -245,14 +271,14 @@ export default function ProductosPage() {
     }
     setEditandoProducto((prev: any) => ({
       ...prev,
-      stocks: [...(prev.stocks || []), { ...loteEnEdicion }]
+      stocks: [...(prev.stocks || []), { ...loteEnEdicion, codigoStock: loteEnEdicion.codigoStock || `L${(prev.stocks.length+1).toString().padStart(2, '0')}` }]
     }))
-    setLoteEnEdicion({ cantidadUnidades: 0, fechaVencimiento: "", precioCompra: 0 })
+    setLoteEnEdicion({ codigoStock: "", cantidadUnidades: 0, fechaVencimiento: "", precioCompra: 0 })
     setEditLoteIndex(null)
   }
 
   const editarLoteDeEdicion = (idx: number) => {
-    setLoteEnEdicion({ ...(editandoProducto.stocks[idx] || { cantidadUnidades: 0, fechaVencimiento: "", precioCompra: 0 }) })
+    setLoteEnEdicion({ ...(editandoProducto.stocks[idx] || { codigoStock: "", cantidadUnidades: 0, fechaVencimiento: "", precioCompra: 0 }) })
     setEditLoteIndex(idx)
   }
 
@@ -264,7 +290,7 @@ export default function ProductosPage() {
         idx === editLoteIndex ? { ...loteEnEdicion } : lote
       )
     }))
-    setLoteEnEdicion({ cantidadUnidades: 0, fechaVencimiento: "", precioCompra: 0 })
+    setLoteEnEdicion({ codigoStock: "", cantidadUnidades: 0, fechaVencimiento: "", precioCompra: 0 })
     setEditLoteIndex(null)
   }
 
@@ -285,7 +311,8 @@ export default function ProductosPage() {
       return
     }
     
-    const stocks = (editandoProducto.stocks || []).map((lote: StockLote) => ({
+    const stocks = (editandoProducto.stocks || []).map((lote: StockLote, idx: number) => ({
+      codigoStock: lote.codigoStock || generarCodigoLote(editandoProducto as Producto, idx),
       cantidadUnidades: Number(lote.cantidadUnidades) || 0,
       fechaVencimiento: lote.fechaVencimiento,
       precioCompra: Number(lote.precioCompra) || 0,
@@ -308,7 +335,7 @@ export default function ProductosPage() {
           laboratorio: editandoProducto.laboratorio,
           categoria: editandoProducto.categoria,
           cantidadUnidadesBlister: Number(editandoProducto.cantidad_unidades_blister) || 0,
-          precioVentaBlister: Number(editandoProducto.precio_venta_blister) || 0,
+          precioVentaBlister: Number(editandoProducto.cantidad_unidades_blister) || 0,
           stocks,
         }),
       })
@@ -386,200 +413,194 @@ export default function ProductosPage() {
                 <DialogTitle>Nuevo Producto</DialogTitle>
                 <DialogDescription>Agrega un nuevo producto al catálogo</DialogDescription>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="codigo_barras">Código de barras *</Label>
-                    <Input
-                      id="codigo_barras"
-                      placeholder="P001"
-                      value={nuevoProducto.codigo_barras}
-                      onChange={(e) => setNuevoProducto({ ...nuevoProducto, codigo_barras: e.target.value })}
-                    />
+              <div className="grid gap-4 py-4 overflow-y-auto max-h-[70vh]">
+                <div className="grid gap-4 py-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="codigo_barras">Código de barras *</Label>
+                      <Input
+                        id="codigo_barras"
+                        placeholder="P001"
+                        value={nuevoProducto.codigo_barras}
+                        onChange={(e) => setNuevoProducto({ ...nuevoProducto, codigo_barras: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="nombre">Nombre *</Label>
+                      <Input
+                        id="nombre"
+                        placeholder="Nombre del producto"
+                        value={nuevoProducto.nombre}
+                        onChange={(e) => setNuevoProducto({ ...nuevoProducto, nombre: e.target.value })}
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="nombre">Nombre *</Label>
-                    <Input
-                      id="nombre"
-                      placeholder="Nombre del producto"
-                      value={nuevoProducto.nombre}
-                      onChange={(e) => setNuevoProducto({ ...nuevoProducto, nombre: e.target.value })}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="concentracion">Concentración</Label>
-                    <Input
-                      id="concentracion"
-                      placeholder="500mg, 10mg, etc"
-                      value={nuevoProducto.concentracion}
-                      onChange={(e) => setNuevoProducto({ ...nuevoProducto, concentracion: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="categoria">Categoría</Label>
-                    <Select
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="concentracion">Concentración</Label>
+                      <Input
+                        id="concentracion"
+                        placeholder="500mg, 10mg, etc"
+                        value={nuevoProducto.concentracion}
+                        onChange={(e) => setNuevoProducto({ ...nuevoProducto, concentracion: e.target.value })}
+                      />
+                    </div>
+                    <ComboBoxCategoria
                       value={nuevoProducto.categoria}
-                      onValueChange={(value) => setNuevoProducto({ ...nuevoProducto, categoria: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecciona categoría" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Analgésicos">Analgésicos</SelectItem>
-                        <SelectItem value="Antibióticos">Antibióticos</SelectItem>
-                        <SelectItem value="Antiinflamatorios">Antiinflamatorios</SelectItem>
-                        <SelectItem value="Antihistamínicos">Antihistamínicos</SelectItem>
-                        <SelectItem value="Antiácidos">Antiácidos</SelectItem>
-                        <SelectItem value="Vitaminas">Vitaminas</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      onChange={categoria => setNuevoProducto({ ...nuevoProducto, categoria })}
+                    />
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="laboratorio">Laboratorio</Label>
+                      <Input
+                        id="laboratorio"
+                        placeholder="Nombre del laboratorio"
+                        value={nuevoProducto.laboratorio}
+                        onChange={(e) => setNuevoProducto({ ...nuevoProducto, laboratorio: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="cantidad_general">Stock inicial</Label>
+                      <Input
+                        id="cantidad_general"
+                        type="number"
+                        placeholder="0"
+                        value={nuevoProducto.stocks.reduce((sum, lote) => sum + Number(lote.cantidadUnidades), 0)}
+                        disabled
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="cantidad_minima">Cantidad mínima (stock mínimo)</Label>
+                      <Input
+                        id="cantidad_minima"
+                        type="number"
+                        min="0"
+                        placeholder="Ej: 10"
+                        value={nuevoProducto.cantidad_minima}
+                        onChange={e => setNuevoProducto({ ...nuevoProducto, cantidad_minima: e.target.value })}
+                      />
+                    </div>
+                    <div />
+                  </div>
+                  {/* Nuevos campos de blister */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="cantidad_unidades_blister">
+                        <Layers className="inline h-4 w-4 mr-1 text-primary" /> Unidades por blister
+                      </Label>
+                      <Input
+                        id="cantidad_unidades_blister"
+                        type="number"
+                        min="1"
+                        placeholder="Ej: 10"
+                        value={nuevoProducto.cantidad_unidades_blister}
+                        onChange={e => setNuevoProducto({ ...nuevoProducto, cantidad_unidades_blister: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="precio_venta_blister">
+                        <Box className="inline h-4 w-4 mr-1 text-primary" /> Precio venta blister
+                      </Label>
+                      <Input
+                        id="precio_venta_blister"
+                        type="number"
+                        step="0.01"
+                        placeholder="Ej: 5.00"
+                        value={nuevoProducto.precio_venta_blister}
+                        onChange={e => setNuevoProducto({ ...nuevoProducto, precio_venta_blister: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  {/* Lotes */}
                   <div className="space-y-2">
-                    <Label htmlFor="laboratorio">Laboratorio</Label>
-                    <Input
-                      id="laboratorio"
-                      placeholder="Nombre del laboratorio"
-                      value={nuevoProducto.laboratorio}
-                      onChange={(e) => setNuevoProducto({ ...nuevoProducto, laboratorio: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="cantidad_general">Stock inicial</Label>
-                    <Input
-                      id="cantidad_general"
-                      type="number"
-                      placeholder="0"
-                      value={nuevoProducto.stocks.reduce((sum, lote) => sum + Number(lote.cantidadUnidades), 0)}
-                      disabled
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="cantidad_minima">Cantidad mínima (stock mínimo)</Label>
-                    <Input
-                      id="cantidad_minima"
-                      type="number"
-                      min="0"
-                      placeholder="Ej: 10"
-                      value={nuevoProducto.cantidad_minima}
-                      onChange={e => setNuevoProducto({ ...nuevoProducto, cantidad_minima: e.target.value })}
-                    />
-                  </div>
-                  <div />
-                </div>
-                {/* Nuevos campos de blister */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="cantidad_unidades_blister">
-                      <Layers className="inline h-4 w-4 mr-1 text-primary" /> Unidades por blister
-                    </Label>
-                    <Input
-                      id="cantidad_unidades_blister"
-                      type="number"
-                      min="1"
-                      placeholder="Ej: 10"
-                      value={nuevoProducto.cantidad_unidades_blister}
-                      onChange={e => setNuevoProducto({ ...nuevoProducto, cantidad_unidades_blister: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="precio_venta_blister">
-                      <Box className="inline h-4 w-4 mr-1 text-primary" /> Precio venta blister
-                    </Label>
-                    <Input
-                      id="precio_venta_blister"
-                      type="number"
-                      step="0.01"
-                      placeholder="Ej: 5.00"
-                      value={nuevoProducto.precio_venta_blister}
-                      onChange={e => setNuevoProducto({ ...nuevoProducto, precio_venta_blister: e.target.value })}
-                    />
-                  </div>
-                </div>
-                {/* Lotes */}
-                <div className="space-y-2">
-                  <Label>Lotes (stocks)</Label>
-                  <div className="grid grid-cols-3 gap-4 mb-2">
-                    <Input
-                      type="number"
-                      placeholder="Unidades"
-                      value={nuevoLote.cantidadUnidades || ""}
-                      min={1}
-                      onChange={e => setNuevoLote({ ...nuevoLote, cantidadUnidades: Number(e.target.value) })}
-                    />
-                    <Input
-                      type="date"
-                      placeholder="Vencimiento"
-                      value={nuevoLote.fechaVencimiento}
-                      onChange={e => setNuevoLote({ ...nuevoLote, fechaVencimiento: e.target.value })}
-                    />
-                    <Input
-                      type="number"
-                      step="0.01"
-                      placeholder="Precio compra"
-                      value={nuevoLote.precioCompra || ""}
-                      min={0}
-                      onChange={e => setNuevoLote({ ...nuevoLote, precioCompra: Number(e.target.value) })}
-                    />
-                  </div>
-                  <Button type="button" variant="outline" onClick={agregarLoteANuevo}>Agregar Lote</Button>
-                  <div className="mt-2">
-                    {nuevoProducto.stocks.length === 0 && <div className="text-sm text-muted-foreground">Sin lotes agregados</div>}
-                    {nuevoProducto.stocks.length > 0 &&
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Unidades</TableHead>
-                            <TableHead>Vencimiento</TableHead>
-                            <TableHead>Precio Compra</TableHead>
-                            <TableHead>Acción</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {nuevoProducto.stocks.map((lote, idx) => (
-                            <TableRow key={idx}>
-                              <TableCell>{lote.cantidadUnidades}</TableCell>
-                              <TableCell>{lote.fechaVencimiento}</TableCell>
-                              <TableCell>S/ {Number(lote.precioCompra).toFixed(2)}</TableCell>
-                              <TableCell>
-                                <Button type="button" variant="ghost" size="icon" onClick={() => eliminarLoteDeNuevo(idx)}>
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </TableCell>
+                    <Label>Lotes (stocks)</Label>
+                    <div className="grid grid-cols-4 gap-4 mb-2">
+                      <Input
+                        placeholder="Código lote"
+                        value={nuevoLote.codigoStock || ""}
+                        onChange={e => setNuevoLote({ ...nuevoLote, codigoStock: e.target.value })}
+                      />
+                      <Input
+                        type="number"
+                        placeholder="Unidades"
+                        value={nuevoLote.cantidadUnidades || ""}
+                        min={1}
+                        onChange={e => setNuevoLote({ ...nuevoLote, cantidadUnidades: Number(e.target.value) })}
+                      />
+                      <Input
+                        type="date"
+                        placeholder="Vencimiento"
+                        value={nuevoLote.fechaVencimiento}
+                        onChange={e => setNuevoLote({ ...nuevoLote, fechaVencimiento: e.target.value })}
+                      />
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="Precio compra"
+                        value={nuevoLote.precioCompra || ""}
+                        min={0}
+                        onChange={e => setNuevoLote({ ...nuevoLote, precioCompra: Number(e.target.value) })}
+                      />
+                    </div>
+                    <Button type="button" variant="outline" onClick={agregarLoteANuevo}>Agregar Lote</Button>
+                    <div className="mt-2">
+                      {nuevoProducto.stocks.length === 0 && <div className="text-sm text-muted-foreground">Sin lotes agregados</div>}
+                      {nuevoProducto.stocks.length > 0 &&
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Código Lote</TableHead>
+                              <TableHead>Unidades</TableHead>
+                              <TableHead>Vencimiento</TableHead>
+                              <TableHead>Precio Compra</TableHead>
+                              <TableHead>Acción</TableHead>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    }
+                          </TableHeader>
+                          <TableBody>
+                            {nuevoProducto.stocks.map((lote, idx) => (
+                              <TableRow key={idx}>
+                                <TableCell>{lote.codigoStock}</TableCell>
+                                <TableCell>{lote.cantidadUnidades}</TableCell>
+                                <TableCell>{lote.fechaVencimiento}</TableCell>
+                                <TableCell>S/ {Number(lote.precioCompra).toFixed(2)}</TableCell>
+                                <TableCell>
+                                  <Button type="button" variant="ghost" size="icon" onClick={() => eliminarLoteDeNuevo(idx)}>
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      }
+                    </div>
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="precio_venta_und">Precio de venta *</Label>
-                    <Input
-                      id="precio_venta_und"
-                      type="number"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={nuevoProducto.precio_venta_und}
-                      onChange={(e) => setNuevoProducto({ ...nuevoProducto, precio_venta_und: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="descuento">Precio con descuento</Label>
-                    <Input
-                      id="descuento"
-                      type="number"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={nuevoProducto.descuento}
-                      onChange={(e) => setNuevoProducto({ ...nuevoProducto, descuento: e.target.value })}
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="precio_venta_und">Precio de venta *</Label>
+                      <Input
+                        id="precio_venta_und"
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={nuevoProducto.precio_venta_und}
+                        onChange={(e) => setNuevoProducto({ ...nuevoProducto, precio_venta_und: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="descuento">Precio con descuento</Label>
+                      <Input
+                        id="descuento"
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={nuevoProducto.descuento}
+                        onChange={(e) => setNuevoProducto({ ...nuevoProducto, descuento: e.target.value })}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -637,10 +658,12 @@ export default function ProductosPage() {
                         <div className="font-medium">{producto.nombre}</div>
                       </div>
                     </TableCell>
-                    <TableCell>{producto.concentracion || "--"}</TableCell>
+                    <TableCell>{producto.concentracion || <span className="text-muted-foreground">--</span>}</TableCell>
                     <TableCell>{producto.categoria}</TableCell>
                     <TableCell>{producto.laboratorio}</TableCell>
-                    <TableCell>S/ {Number(producto.precioVentaUnd).toFixed(2)}</TableCell>
+                    <TableCell>
+                      S/ {Number(producto.precioVentaUnd).toFixed(2)}
+                    </TableCell>
                     <TableCell>
                       <Badge
                         variant={
@@ -667,14 +690,18 @@ export default function ProductosPage() {
                     <TableCell>
                       {producto.cantidadUnidadesBlister ? (
                         <Badge variant="outline" className="text-xs">{producto.cantidadUnidadesBlister} u.</Badge>
-                      ) : "--"}
+                      ) : (
+                        <span className="text-muted-foreground">--</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {producto.precioVentaBlister ? (
                         <Badge variant="outline" className="text-xs">
                           S/ {Number(producto.precioVentaBlister).toFixed(2)}
                         </Badge>
-                      ) : "--"}
+                      ) : (
+                        <span className="text-muted-foreground">--</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {producto.descuento > 0 && producto.descuento < producto.precioVentaUnd ? (
@@ -682,7 +709,7 @@ export default function ProductosPage() {
                           {calcularDescuentoPorcentaje(Number(producto.precioVentaUnd), Number(producto.descuento))}%
                         </Badge>
                       ) : (
-                        "-"
+                        <span className="text-muted-foreground">-</span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -701,9 +728,9 @@ export default function ProductosPage() {
                                     </Badge>
                                     <Badge variant="secondary" className="text-xs px-2 py-1">
                                       <Calendar className="w-3 h-3 mr-1" />
-                                      {new Date(producto.stocks?.[0]?.fechaVencimiento || '').toLocaleDateString('es-PE', { 
-                                        day: '2-digit', 
-                                        month: '2-digit' 
+                                      {new Date(producto.stocks?.[0]?.fechaVencimiento || '').toLocaleDateString('es-PE', {
+                                        day: '2-digit',
+                                        month: '2-digit'
                                       })}
                                     </Badge>
                                   </div>
@@ -755,7 +782,7 @@ export default function ProductosPage() {
                                     <div className="flex justify-between">
                                       <span className="font-medium">Valor:</span>
                                       <span className="text-green-600 font-semibold">
-                                        S/ {producto.stocks?.reduce((sum, lote) => 
+                                        S/ {producto.stocks?.reduce((sum, lote) =>
                                           sum + (lote.cantidadUnidades * lote.precioCompra), 0
                                         ).toFixed(2)}
                                       </span>
@@ -766,9 +793,9 @@ export default function ProductosPage() {
                             </Tooltip>
                           </TooltipProvider>
                           {(producto.stocks?.length ?? 0) > 2 && (
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               className="h-6 px-2 text-xs w-full"
                               onClick={() => setLotesModalProducto(producto)}
                             >
@@ -800,8 +827,8 @@ export default function ProductosPage() {
         </CardContent>
       </Card>
 
-      {/* Dialogs para lotes y edición de productos igual que antes, solo incluye los campos de stock mínimo */}
-      {/* ... (todo el resto de dialogs igual) ... */}
+
+      
 
       {/* Modal detallado de lotes */}
       <Dialog open={!!lotesModalProducto} onOpenChange={() => setLotesModalProducto(null)}>
@@ -820,6 +847,7 @@ export default function ProductosPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Código Lote</TableHead> {/* NUEVO */}
                     <TableHead>Cantidad</TableHead>
                     <TableHead>Fecha Vencimiento</TableHead>
                     <TableHead>Precio Compra</TableHead>
@@ -833,6 +861,12 @@ export default function ProductosPage() {
                     const estadoLote = obtenerEstadoLote(lote.fechaVencimiento)
                     return (
                       <TableRow key={idx}>
+                        <TableCell>
+                          <Badge variant="outline" className="flex items-center gap-1">
+                            {/* NUEVO */}
+                            {lote.codigoStock || "—"}
+                          </Badge>
+                        </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="flex items-center gap-1">
                             <Package className="w-3 h-3" />
@@ -910,210 +944,211 @@ export default function ProductosPage() {
             <DialogTitle>Editar Producto</DialogTitle>
             <DialogDescription>Modifica la información del producto</DialogDescription>
           </DialogHeader>
-          {editandoProducto && (
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+           <div className="grid gap-4 py-4 overflow-y-auto max-h-[70vh]">
+            {editandoProducto && (
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-codigo_barras">Código de barras *</Label>
+                    <Input
+                      id="edit-codigo_barras"
+                      value={editandoProducto.codigo_barras}
+                      onChange={(e) => setEditandoProducto({ ...editandoProducto, codigo_barras: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-nombre">Nombre *</Label>
+                    <Input
+                      id="edit-nombre"
+                      value={editandoProducto.nombre}
+                      onChange={(e) => setEditandoProducto({ ...editandoProducto, nombre: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-concentracion">Concentración</Label>
+                    <Input
+                      id="edit-concentracion"
+                      value={editandoProducto.concentracion}
+                      onChange={(e) => setEditandoProducto({ ...editandoProducto, concentracion: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-categoria"></Label>
+                    <ComboBoxCategoria
+                      value={editandoProducto.categoria}
+                      onChange={categoria => setEditandoProducto({ ...editandoProducto, categoria })}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-laboratorio">Laboratorio</Label>
+                    <Input
+                      id="edit-laboratorio"
+                      value={editandoProducto.laboratorio}
+                      onChange={(e) => setEditandoProducto({ ...editandoProducto, laboratorio: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-cantidad_general">Stock</Label>
+                    <Input
+                      id="edit-cantidad_general"
+                      type="number"
+                      value={Array.isArray(editandoProducto.stocks) ? editandoProducto.stocks.reduce((sum: number, lote: StockLote) => sum + Number(lote.cantidadUnidades), 0) : editandoProducto.cantidad_general}
+                      disabled
+                    />
+                  </div>
+                </div>
+                {/* Campo stock mínimo (edición) */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-cantidad_minima">Cantidad mínima (stock mínimo)</Label>
+                    <Input
+                      id="edit-cantidad_minima"
+                      type="number"
+                      min="0"
+                      value={editandoProducto.cantidad_minima}
+                      onChange={e => setEditandoProducto({ ...editandoProducto, cantidad_minima: e.target.value })}
+                    />
+                  </div>
+                  <div />
+                </div>
+                {/* Campos blister (edición) */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-cantidad_unidades_blister">
+                      <Layers className="inline h-4 w-4 mr-1 text-primary" /> Unidades por blister
+                    </Label>
+                    <Input
+                      id="edit-cantidad_unidades_blister"
+                      type="number"
+                      min="1"
+                      value={editandoProducto.cantidad_unidades_blister}
+                      onChange={e => setEditandoProducto({ ...editandoProducto, cantidad_unidades_blister: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-precio_venta_blister">
+                      <Box className="inline h-4 w-4 mr-1 text-primary" /> Precio venta blister
+                    </Label>
+                    <Input
+                      id="edit-precio_venta_blister"
+                      type="number"
+                      step="0.01"
+                      value={editandoProducto.precio_venta_blister}
+                      onChange={e => setEditandoProducto({ ...editandoProducto, precio_venta_blister: e.target.value })}
+                    />
+                  </div>
+                </div>
+                {/* Lotes */}
                 <div className="space-y-2">
-                  <Label htmlFor="edit-codigo_barras">Código de barras *</Label>
-                  <Input
-                    id="edit-codigo_barras"
-                    value={editandoProducto.codigo_barras}
-                    onChange={(e) => setEditandoProducto({ ...editandoProducto, codigo_barras: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-nombre">Nombre *</Label>
-                  <Input
-                    id="edit-nombre"
-                    value={editandoProducto.nombre}
-                    onChange={(e) => setEditandoProducto({ ...editandoProducto, nombre: e.target.value })}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-concentracion">Concentración</Label>
-                  <Input
-                    id="edit-concentracion"
-                    value={editandoProducto.concentracion}
-                    onChange={(e) => setEditandoProducto({ ...editandoProducto, concentracion: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-categoria">Categoría</Label>
-                  <Select
-                    value={editandoProducto.categoria}
-                    onValueChange={(value) => setEditandoProducto({ ...editandoProducto, categoria: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Analgésicos">Analgésicos</SelectItem>
-                      <SelectItem value="Antibióticos">Antibióticos</SelectItem>
-                      <SelectItem value="Antiinflamatorios">Antiinflamatorios</SelectItem>
-                      <SelectItem value="Antihistamínicos">Antihistamínicos</SelectItem>
-                      <SelectItem value="Antiácidos">Antiácidos</SelectItem>
-                      <SelectItem value="Vitaminas">Vitaminas</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-laboratorio">Laboratorio</Label>
-                  <Input
-                    id="edit-laboratorio"
-                    value={editandoProducto.laboratorio}
-                    onChange={(e) => setEditandoProducto({ ...editandoProducto, laboratorio: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-cantidad_general">Stock</Label>
-                  <Input
-                    id="edit-cantidad_general"
-                    type="number"
-                    value={Array.isArray(editandoProducto.stocks) ? editandoProducto.stocks.reduce((sum: number, lote: StockLote) => sum + Number(lote.cantidadUnidades), 0) : editandoProducto.cantidad_general}
-                    disabled
-                  />
-                </div>
-              </div>
-              {/* Campo stock mínimo (edición) */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-cantidad_minima">Cantidad mínima (stock mínimo)</Label>
-                  <Input
-                    id="edit-cantidad_minima"
-                    type="number"
-                    min="0"
-                    value={editandoProducto.cantidad_minima}
-                    onChange={e => setEditandoProducto({ ...editandoProducto, cantidad_minima: e.target.value })}
-                  />
-                </div>
-                <div />
-              </div>
-              {/* Campos blister (edición) */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-cantidad_unidades_blister">
-                    <Layers className="inline h-4 w-4 mr-1 text-primary" /> Unidades por blister
-                  </Label>
-                  <Input
-                    id="edit-cantidad_unidades_blister"
-                    type="number"
-                    min="1"
-                    value={editandoProducto.cantidad_unidades_blister}
-                    onChange={e => setEditandoProducto({ ...editandoProducto, cantidad_unidades_blister: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-precio_venta_blister">
-                    <Box className="inline h-4 w-4 mr-1 text-primary" /> Precio venta blister
-                  </Label>
-                  <Input
-                    id="edit-precio_venta_blister"
-                    type="number"
-                    step="0.01"
-                    value={editandoProducto.precio_venta_blister}
-                    onChange={e => setEditandoProducto({ ...editandoProducto, precio_venta_blister: e.target.value })}
-                  />
-                </div>
-              </div>
-              {/* Lotes */}
-              <div className="space-y-2">
-                <Label>Lotes (stocks)</Label>
-                <div className="grid grid-cols-3 gap-4 mb-2">
-                  <Input
-                    type="number"
-                    placeholder="Unidades"
-                    value={loteEnEdicion?.cantidadUnidades ?? ""}
-                    min={1}
-                    onChange={e => setLoteEnEdicion(old => ({ ...old, cantidadUnidades: Number(e.target.value) } as StockLote))}
-                  />
-                  <Input
-                    type="date"
-                    placeholder="Vencimiento"
-                    value={loteEnEdicion?.fechaVencimiento ?? ""}
-                    onChange={e => setLoteEnEdicion(old => ({ ...old, fechaVencimiento: e.target.value } as StockLote))}
-                  />
-                  <Input
-                    type="number"
-                    step="0.01"
-                    placeholder="Precio compra"
-                    value={loteEnEdicion?.precioCompra ?? ""}
-                    min={0}
-                    onChange={e => setLoteEnEdicion(old => ({ ...old, precioCompra: Number(e.target.value) } as StockLote))}
-                  />
-                </div>
-                <div className="flex gap-2 mb-2">
-                  {editLoteIndex === null ? (
-                    <Button type="button" variant="outline" onClick={agregarLoteAEdicion}>Agregar Lote</Button>
-                  ) : (
-                    <Button type="button" variant="outline" onClick={guardarLoteEditado}>Guardar Edición de Lote</Button>
-                  )}
-                  {editLoteIndex !== null && (
-                    <Button type="button" variant="ghost" onClick={() => { setEditLoteIndex(null); setLoteEnEdicion(null); }}>
-                      Cancelar edición
-                    </Button>
-                  )}
-                </div>
-                <div className="mt-2">
-                  {(!editandoProducto.stocks || editandoProducto.stocks.length === 0) && <div className="text-sm text-muted-foreground">Sin lotes</div>}
-                  {editandoProducto.stocks && editandoProducto.stocks.length > 0 &&
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Unidades</TableHead>
-                          <TableHead>Vencimiento</TableHead>
-                          <TableHead>Precio Compra</TableHead>
-                          <TableHead>Acción</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {editandoProducto.stocks.map((lote: StockLote, idx: number) => (
-                          <TableRow key={idx}>
-                            <TableCell>{lote.cantidadUnidades}</TableCell>
-                            <TableCell>{lote.fechaVencimiento}</TableCell>
-                            <TableCell>S/ {Number(lote.precioCompra).toFixed(2)}</TableCell>
-                            <TableCell className="flex gap-2">
-                              <Button type="button" variant="ghost" size="icon" onClick={() => editarLoteDeEdicion(idx)}>
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button type="button" variant="ghost" size="icon" onClick={() => eliminarLoteDeEdicion(idx)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </TableCell>
+                  <Label>Lotes (stocks)</Label>
+                  <div className="grid grid-cols-4 gap-4 mb-2">
+                    <Input
+                      placeholder="Código lote"
+                      value={loteEnEdicion?.codigoStock ?? ""}
+                      onChange={e => setLoteEnEdicion(old => ({ ...old, codigoStock: e.target.value } as StockLote))}
+                    />
+                    <Input
+                      type="number"
+                      placeholder="Unidades"
+                      value={loteEnEdicion?.cantidadUnidades ?? ""}
+                      min={1}
+                      onChange={e => setLoteEnEdicion(old => ({ ...old, cantidadUnidades: Number(e.target.value) } as StockLote))}
+                    />
+                    <Input
+                      type="date"
+                      placeholder="Vencimiento"
+                      value={loteEnEdicion?.fechaVencimiento ?? ""}
+                      onChange={e => setLoteEnEdicion(old => ({ ...old, fechaVencimiento: e.target.value } as StockLote))}
+                    />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="Precio compra"
+                      value={loteEnEdicion?.precioCompra !== undefined ? String(loteEnEdicion.precioCompra) : ""}
+                      min={0}
+                      onChange={e =>
+                        setLoteEnEdicion(old =>
+                          ({ ...old, precioCompra: Number(e.target.value) } as StockLote)
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="flex gap-2 mb-2">
+                    {editLoteIndex === null ? (
+                      <Button type="button" variant="outline" onClick={agregarLoteAEdicion}>Agregar Lote</Button>
+                    ) : (
+                      <Button type="button" variant="outline" onClick={guardarLoteEditado}>Guardar Edición de Lote</Button>
+                    )}
+                    {editLoteIndex !== null && (
+                      <Button type="button" variant="ghost" onClick={() => { setEditLoteIndex(null); setLoteEnEdicion(null); }}>
+                        Cancelar edición
+                      </Button>
+                    )}
+                  </div>
+                  <div className="mt-2">
+                    {(!editandoProducto.stocks || editandoProducto.stocks.length === 0) && <div className="text-sm text-muted-foreground">Sin lotes</div>}
+                    {editandoProducto.stocks && editandoProducto.stocks.length > 0 &&
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Código Lote</TableHead>
+                            <TableHead>Unidades</TableHead>
+                            <TableHead>Vencimiento</TableHead>
+                            <TableHead>Precio Compra</TableHead>
+                            <TableHead>Acción</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  }
+                        </TableHeader>
+                        <TableBody>
+                          {editandoProducto.stocks.map((lote: StockLote, idx: number) => (
+                            <TableRow key={idx}>
+                              <TableCell>{lote.codigoStock}</TableCell>
+                              <TableCell>{lote.cantidadUnidades}</TableCell>
+                              <TableCell>{lote.fechaVencimiento}</TableCell>
+                              <TableCell>S/ {Number(lote.precioCompra).toFixed(2)}</TableCell>
+                              <TableCell className="flex gap-2">
+                                <Button type="button" variant="ghost" size="icon" onClick={() => editarLoteDeEdicion(idx)}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button type="button" variant="ghost" size="icon" onClick={() => eliminarLoteDeEdicion(idx)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    }
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-precio_venta_und">Precio de venta *</Label>
+                    <Input
+                      id="edit-precio_venta_und"
+                      type="number"
+                      step="0.01"
+                      value={editandoProducto.precio_venta_und}
+                      onChange={(e) => setEditandoProducto({ ...editandoProducto, precio_venta_und: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-descuento">Precio con descuento</Label>
+                    <Input
+                      id="edit-descuento"
+                      type="number"
+                      step="0.01"
+                      value={editandoProducto.descuento}
+                      onChange={(e) => setEditandoProducto({ ...editandoProducto, descuento: e.target.value })}
+                    />
+                  </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-precio_venta_und">Precio de venta *</Label>
-                  <Input
-                    id="edit-precio_venta_und"
-                    type="number"
-                    step="0.01"
-                    value={editandoProducto.precio_venta_und}
-                    onChange={(e) => setEditandoProducto({ ...editandoProducto, precio_venta_und: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-descuento">Precio con descuento</Label>
-                  <Input
-                    id="edit-descuento"
-                    type="number"
-                    step="0.01"
-                    value={editandoProducto.descuento}
-                    onChange={(e) => setEditandoProducto({ ...editandoProducto, descuento: e.target.value })}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setEditandoProducto(null); setLoteEnEdicion(null); setEditLoteIndex(null); }}>
               Cancelar

@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { RoleGuard } from "@/components/RoleGuard"
 import { useToast } from "@/hooks/use-toast"
+import ChangePasswordDialog from "@/components/ChangePasswordDialog"
 
 import {
   Dialog,
@@ -21,7 +22,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-import { Edit, Plus, Search, Trash2, User, Users } from "lucide-react"
+import { Edit, Plus, Search, Trash2, User, Users, KeyRound } from "lucide-react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,7 +32,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 
 type Usuario = {
@@ -75,6 +75,8 @@ export default function UsuariosPage() {
   const [isEnviando, setIsEnviando] = useState(false)
   const [editandoUsuario, setEditandoUsuario] = useState<Usuario | null>(null)
   const [usuarioAEliminar, setUsuarioAEliminar] = useState<Usuario | null>(null)
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false)
+  const [usuarioIdPasswordDialog, setUsuarioIdPasswordDialog] = useState<number | null>(null)
   const nombreCompletoRef = useRef<HTMLInputElement>(null)
   const dniRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
@@ -183,7 +185,7 @@ export default function UsuariosPage() {
     }
 
     try {
-      const res = await fetchConAuth(`/api/usuarios/${editandoUsuario.id}`, {
+      const res = await fetchConAuth(`http://62.169.28.77:8080/usuarios/${editandoUsuario.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -212,7 +214,7 @@ export default function UsuariosPage() {
   const eliminarUsuario = async () => {
     if (!usuarioAEliminar) return
     try {
-      const res = await fetchConAuth(`/api/usuarios/${usuarioAEliminar.id}`, {
+      const res = await fetchConAuth(`http://62.169.28.77:8080/usuarios/${usuarioAEliminar.id}`, {
         method: "DELETE"
       })
       if (res.ok) {
@@ -228,42 +230,39 @@ export default function UsuariosPage() {
   }
 
   const cargarUsuarios = () => {
-  const token = localStorage.getItem("token");
-  if (!token) {
-    toast({ title: "Sesión expirada", description: "Por favor, inicia sesión de nuevo", variant: "destructive" });
-    // Aquí podrías redirigir al login si quieres
-    return;
-  }
-  fetch("http://62.169.28.77:8080/usuarios", {
-    headers: {
-      "Authorization": `Bearer ${token}`,
-    }
-  })
-    .then(res => {
-      if (!res.ok) throw new Error("Error de sesión o autorización");
-      return res.json();
-    })
-    .then(data => {
-      const usuariosAdaptados = data.map((u: any) => ({
-        id: u.id,
-        nombre_completo: u.nombreCompleto,
-        dni: u.dni,
-        rol: (u.rol || "").toLowerCase(),
-        turno: u.turno,
-        horario_entrada: u.horarioEntrada,
-        horario_salida: u.horarioSalida,
-      }))
-      setUsuarios(usuariosAdaptados)
-    })
-    .catch((err) => {
+    const token = localStorage.getItem("token");
+    if (!token) {
       toast({ title: "Sesión expirada", description: "Por favor, inicia sesión de nuevo", variant: "destructive" });
-      // Opcional: redirigir al login
+      return;
+    }
+    fetch("http://62.169.28.77:8080/usuarios", {
+      headers: {
+        "Authorization": `Bearer ${token}`,
+      }
     })
-}
-
+      .then(res => {
+        if (!res.ok) throw new Error("Error de sesión o autorización");
+        return res.json();
+      })
+      .then(data => {
+        const usuariosAdaptados = data.map((u: any) => ({
+          id: u.id,
+          nombre_completo: u.nombreCompleto,
+          dni: u.dni,
+          rol: (u.rol || "").toLowerCase(),
+          turno: u.turno,
+          horario_entrada: u.horarioEntrada,
+          horario_salida: u.horarioSalida,
+        }))
+        setUsuarios(usuariosAdaptados)
+      })
+      .catch((err) => {
+        toast({ title: "Sesión expirada", description: "Por favor, inicia sesión de nuevo", variant: "destructive" });
+        // Opcional: redirigir al login
+      })
+  }
 
   useEffect(() => { cargarUsuarios() }, [])
-
 
   return (
     <RoleGuard allowedRoles={["administrador"]}>
@@ -483,6 +482,18 @@ export default function UsuariosPage() {
                             <Edit className="h-4 w-4" />
                             <span className="sr-only">Editar</span>
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setUsuarioIdPasswordDialog(usuario.id)
+                              setShowPasswordDialog(true)
+                            }}
+                            title="Cambiar contraseña"
+                          >
+                            <KeyRound className="h-4 w-4 text-blue-600" />
+                            <span className="sr-only">Cambiar Contraseña</span>
+                          </Button>
                           <AlertDialog open={usuarioAEliminar?.id === usuario.id} onOpenChange={(open) => setUsuarioAEliminar(open ? usuario : null)}>
                             <AlertDialogContent>
                               <AlertDialogHeader>
@@ -596,6 +607,22 @@ export default function UsuariosPage() {
               </Button>
               <Button onClick={guardarEdicionUsuario}>Guardar Cambios</Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog para cambiar contraseña */}
+        <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Cambiar contraseña</DialogTitle>
+            </DialogHeader>
+            {usuarioIdPasswordDialog && (
+              <ChangePasswordDialog
+                userId={usuarioIdPasswordDialog}
+                onClose={() => setShowPasswordDialog(false)}
+                isAdmin={true}
+              />
+            )}
           </DialogContent>
         </Dialog>
       </div>

@@ -132,17 +132,7 @@ export default function PerfilPage() {
         <div className="md:col-span-2 space-y-6">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Información Personal</CardTitle>
-                  <CardDescription>Actualiza tu información personal</CardDescription>
-                </div>
-                {!editando && (
-                  <Button variant="outline" onClick={() => setEditando(true)}>
-                    Editar
-                  </Button>
-                )}
-              </div>
+              
             </CardHeader>
             <CardContent>
               <div className="space-y-4">

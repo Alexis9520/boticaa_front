@@ -23,7 +23,8 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import SalesChart from "@/components/sales-chart"
-import { fetchWithAuth } from "@/lib/api" // Ajusta al path real de tu utilidad
+import { fetchWithAuth } from "@/lib/api"
+import { useToast } from "@/hooks/use-toast"
 
 type VentasDia = { monto: number, variacion: number }
 type VentasMes = { monto: number, variacion: number }
@@ -38,6 +39,7 @@ type VentasPorHora = { hora: string, total: number }
 export default function Dashboard() {
   const { user, loading } = useAuth()
   const router = useRouter()
+  const { toast } = useToast()
 
   const [ventasDia, setVentasDia] = useState<VentasDia>({ monto: 0, variacion: 0 })
   const [ventasMes, setVentasMes] = useState<VentasMes>({ monto: 0, variacion: 0 })
@@ -56,33 +58,7 @@ export default function Dashboard() {
   }, [user, loading, router])
 
   useEffect(() => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
-    fetch("http://62.169.28.77:8080/api/dashboard/resumen", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      }
-    })
-      .then(async (res) => {
-        if (res.status === 401) {
-          localStorage.removeItem("token");
-          router.replace("/login");
-          return;
-        }
-        if (res.status === 403) {
-          alert("No tienes permisos para ver este dashboard (Error 403: Forbidden)");
-          router.replace("/");
-          return;
-        }
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(errText || `Error en la petición: ${res.status}`);
-        }
-        return res.json();
-      })
+    fetchWithAuth("http://62.169.28.77:8080/api/dashboard/resumen", {}, toast)
       .then((data) => {
         if (!data) return;
         setVentasDia(data.ventasDia);
@@ -95,28 +71,16 @@ export default function Dashboard() {
         setProductosVencimiento(data.productosVencimiento);
       })
       .catch((err) => {
+        // El toast ya lo muestra fetchWithAuth
         console.error(err);
       });
-  }, [router]);
+  }, [toast]);
 
   useEffect(() => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
-    fetch("http://62.169.28.77:8080/api/dashboard/ventas-por-hora", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      }
-    })
-      .then(async (res) => {
-        if (!res.ok) return [];
-        return res.json();
-      })
-      .then((data) => setVentasPorHora(data))
+    fetchWithAuth("http://62.169.28.77:8080/api/dashboard/ventas-por-hora", {}, toast)
+      .then((data) => setVentasPorHora(data ?? []))
       .catch(() => setVentasPorHora([]));
-  }, [router]);
+  }, [toast]);
 
   if (loading || !user) {
     return <Spinner />

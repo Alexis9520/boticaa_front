@@ -40,21 +40,21 @@ export default function LoginForm() {
     setIsLoading(true)
 
     try {
-      const success = await login(values.dni, values.password)
+      const result = await login(values.dni, values.password)
 
-      if (success) {
+      if (result.ok) {
         toast({
-        variant: "default",
-        title: "¡Bienvenido!",
-        description: `Has iniciado sesión correctamente`,
-      })
+          variant: "default",
+          title: "¡Bienvenido!",
+          description: `Has iniciado sesión correctamente`,
+        })
         router.push("/dashboard")
         router.refresh()
       } else {
         toast({
           variant: "destructive",
           title: "Error de autenticación",
-          description: "DNI o contraseña incorrectos",
+          description: result.error || "DNI o contraseña incorrectos",
         })
       }
     } catch (error) {
