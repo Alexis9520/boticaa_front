@@ -58,7 +58,7 @@ export default function Dashboard() {
   }, [user, loading, router])
 
   useEffect(() => {
-    fetchWithAuth("http://62.169.28.77:8080/api/dashboard/resumen", {}, toast)
+    fetchWithAuth("http://localhost:8080/api/dashboard/resumen", {}, toast)
       .then((data) => {
         if (!data) return;
         setVentasDia(data.ventasDia);
@@ -77,7 +77,7 @@ export default function Dashboard() {
   }, [toast]);
 
   useEffect(() => {
-    fetchWithAuth("http://62.169.28.77:8080/api/dashboard/ventas-por-hora", {}, toast)
+    fetchWithAuth("http://localhost:8080/api/dashboard/ventas-por-hora", {}, toast)
       .then((data) => setVentasPorHora(data ?? []))
       .catch(() => setVentasPorHora([]));
   }, [toast]);
