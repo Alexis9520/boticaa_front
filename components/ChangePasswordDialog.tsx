@@ -2,6 +2,7 @@ import React, { useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
+import { apiUrl } from "@/components/config"
 
 type Props = {
   userId: number
@@ -15,6 +16,7 @@ const ChangePasswordDialog = ({ userId, onClose, isAdmin = false }: Props) => {
   const [nuevaContrasena, setNuevaContrasena] = useState("")
   const [confirmarContrasena, setConfirmarContrasena] = useState("")
   const [isSending, setIsSending] = useState(false)
+  
 
   const handleChangePassword = async () => {
     if (!nuevaContrasena || !confirmarContrasena) {
@@ -33,7 +35,7 @@ const ChangePasswordDialog = ({ userId, onClose, isAdmin = false }: Props) => {
     setIsSending(true)
     try {
       const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
-      const res = await fetch(`http://62.169.28.77:8080/usuarios/${userId}/cambiar-contrasena`, {
+      const res = await fetch(apiUrl(`/usuarios/${userId}/cambiar-contrasena`), {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",

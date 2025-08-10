@@ -22,6 +22,8 @@ import { DateRangePicker } from "@/components/date-range-picker"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import { getBoletas } from "@/lib/api"
+// Si necesitas hacer algún fetch directo, importa apiUrl así:
+import { apiUrl } from "@/components/config"
 
 type ProductoVendido = {
   codBarras: string
@@ -95,7 +97,7 @@ function exportarBoletasPDF(boletasFiltradas: Boleta[]) {
       formatFechaHora(b.fecha),
       b.cliente,
       b.metodoPago ?? "",
-      b.totalCompra ?? "",   // Corregido: aquí va el total de compra
+      b.totalCompra ?? "",
       b.vuelto ?? "",
       b.usuario ?? ""
     ]),
@@ -186,7 +188,7 @@ export default function VentasPage() {
         if (Array.isArray(data.boletas)) {
           const boletasAdaptadas = data.boletas.map((b: any) => ({
             ...b,
-            numero: b.numero ?? b.boleta ?? "", // Asegura que el número de boleta esté bien
+            numero: b.numero ?? b.boleta ?? "",
             fecha: b.fecha ?? b.fecha_venta ?? "",
             total: b.total ?? b.total_compra ?? "",
             totalCompra: b.totalCompra ?? b.total_compra ?? b.total ?? "",
@@ -228,6 +230,7 @@ export default function VentasPage() {
     ]
     downloadCSV("boletas.csv", rows)
   }
+
 
   return (
     <div className="flex flex-col gap-5">

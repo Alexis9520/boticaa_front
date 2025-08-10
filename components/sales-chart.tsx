@@ -13,8 +13,7 @@ export default function SalesChart({ data }: SalesChartProps) {
   const { theme } = useTheme()
   const isDark = theme === "dark"
 
-  // Diagnóstico
-  console.log("Ventas por hora recibidas:", data)
+  
 
   if (!data || data.length === 0) {
     return <div className="text-center text-muted-foreground">No hay datos de ventas por hora.</div>

@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast"
 import { ArrowLeft, Minus, Plus, Search, Trash2, X, Layers, Package } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import TicketPrint from "@/components/TicketPrint"
+import { apiUrl } from "@/components/config"
 
 interface Producto {
   codigoBarras: string
@@ -167,7 +168,7 @@ export default function NuevaVentaPage() {
   useEffect(() => {
     const fetchProductos = async () => {
       try {
-        const data = await fetchWithAuth("http://62.169.28.77:8080/productos")
+        const data = await fetchWithAuth(apiUrl("/productos"))
         setProductos(data)
       } catch (e) {
         toast({ title: "Error", description: "No se pudo cargar productos", variant: "destructive" })
@@ -429,7 +430,7 @@ export default function NuevaVentaPage() {
     }
 
     try {
-      await fetchWithAuth("http://62.169.28.77:8080/api/ventas", {
+      await fetchWithAuth(apiUrl("/api/ventas"), {
         method: "POST",
         body: JSON.stringify(ventaDTO),
       })
@@ -440,7 +441,7 @@ export default function NuevaVentaPage() {
         variant: "default",
       })
       try {
-        const productosRes = await fetchWithAuth("http://62.169.28.77:8080/productos")
+         const productosRes = await fetchWithAuth(apiUrl("/productos"))
         setProductos(productosRes)
       } catch (e) {}
       setVentaGenerada({

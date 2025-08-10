@@ -20,6 +20,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { AlertTriangle, Calendar, Edit, Package, Search, TrendingDown, TrendingUp, RefreshCcw, Filter, AlertCircle } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { fetchWithAuth } from "@/lib/api"
+import { apiUrl } from "@/components/config"
 
 type StockItem = {
   id: number
@@ -50,7 +51,7 @@ export default function StockPage() {
     setLoading(true)
     setError(null)
     try {
-      const data = await fetchWithAuth("http://62.169.28.77:8080/api/stock")
+      const data = await fetchWithAuth(apiUrl("/api/stock"))
       setStock(data || [])
     } catch (err: any) {
       setError("No se pudo cargar el stock")
@@ -152,7 +153,7 @@ export default function StockPage() {
       return
     }
     setLoading(true)
-    const res = await fetchWithAuth(`http://62.169.28.77:8080/api/stock/${editandoStock.id}`, {
+    const res = await fetchWithAuth(apiUrl(`/api/stock/${editandoStock.id}`), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

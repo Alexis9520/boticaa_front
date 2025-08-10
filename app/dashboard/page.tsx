@@ -25,7 +25,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import SalesChart from "@/components/sales-chart"
 import { fetchWithAuth } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
-
+import { apiUrl } from "@/components/config"
 type VentasDia = { monto: number, variacion: number }
 type VentasMes = { monto: number, variacion: number }
 type SaldoCaja = { total: number, efectivo: number, yape: number }
@@ -58,7 +58,7 @@ export default function Dashboard() {
   }, [user, loading, router])
 
   useEffect(() => {
-    fetchWithAuth("http://localhost:8080/api/dashboard/resumen", {}, toast)
+    fetchWithAuth(apiUrl("/api/dashboard/resumen"), {}, toast)
       .then((data) => {
         if (!data) return;
         setVentasDia(data.ventasDia);
@@ -77,7 +77,7 @@ export default function Dashboard() {
   }, [toast]);
 
   useEffect(() => {
-    fetchWithAuth("http://localhost:8080/api/dashboard/ventas-por-hora", {}, toast)
+    fetchWithAuth(apiUrl("/api/dashboard/ventas-por-hora"), {}, toast)
       .then((data) => setVentasPorHora(data ?? []))
       .catch(() => setVentasPorHora([]));
   }, [toast]);

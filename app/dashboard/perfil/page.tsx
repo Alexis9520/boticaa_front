@@ -10,7 +10,8 @@ import { useToast } from "@/components/ui/use-toast"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { User, Calendar, Shield } from "lucide-react"
-import { fetchWithAuth } from "@/lib/api" // <-- Usa tu función aquí
+import { fetchWithAuth } from "@/lib/api" 
+import { apiUrl } from "@/components/config"
 
 export default function PerfilPage() {
   const { user } = useAuth()
@@ -36,7 +37,7 @@ export default function PerfilPage() {
   useEffect(() => {
     async function fetchUser() {
       try {
-        const data = await fetchWithAuth("http://62.169.28.77:8080/usuarios/me")
+        const data = await fetchWithAuth(apiUrl("/usuarios/me"))
         setDatosPersonales({
           nombre_completo: data.nombreCompleto ?? "",
           horario_entrada: data.horarioEntrada ?? "",
@@ -59,7 +60,7 @@ export default function PerfilPage() {
   // Guardar cambios usando el backend protegido
   const guardarCambios = async () => {
     try {
-      await fetchWithAuth("http://62.169.28.77:8080/usuarios/me", {
+      await fetchWithAuth(apiUrl("/usuarios/me"), {
         method: "PUT",
         body: JSON.stringify({
           nombreCompleto: datosPersonales.nombre_completo,

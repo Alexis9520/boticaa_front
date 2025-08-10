@@ -1,6 +1,7 @@
+import { apiUrl } from "../components/config"; // Ajusta la ruta si tu config cambia de lugar
+
 type ToastFn = (opts: { title: string; description: string; variant?: "destructive" | "default" }) => void;
 
-// Ahora acepta un toastFn opcional
 export async function fetchWithAuth(
   url: string,
   options: RequestInit = {},
@@ -37,7 +38,6 @@ export async function fetchWithAuth(
 
     const lowerMsg = backendMsg.toLowerCase();
 
-    // 1. Caso: CERRAR TU CAJA (aunque incluya "fuera de horario" o similar)
     if (res.status === 403 && lowerMsg.includes("cerrar tu caja")) {
       if (toastFn) {
         toastFn({
@@ -46,15 +46,12 @@ export async function fetchWithAuth(
           variant: "destructive",
         });
       }
-      // Solo redirige si NO estás ya en /dashboard/caja
       if (typeof window !== "undefined" && window.location.pathname !== "/dashboard/caja") {
         window.location.href = "/dashboard/caja";
       }
-      // NO borres el token ni redirijas al login, solo retorna null para que la UI lo maneje
       return null;
     }
 
-    // 2. Caso: FUERA DE HORARIO SIN "cerrar tu caja"
     if (
       res.status === 403 &&
       (lowerMsg.includes("fuera de tu horario") || lowerMsg.includes("fuera de horario"))
@@ -72,7 +69,6 @@ export async function fetchWithAuth(
       throw new Error(backendMsg);
     }
 
-    // 3. Caso: 401 (token inválido)
     if (res.status === 401) {
       localStorage.removeItem("token");
       localStorage.removeItem("usuario");
@@ -87,7 +83,6 @@ export async function fetchWithAuth(
       throw new Error("Sesión expirada");
     }
 
-    // 4. Otros errores
     if (toastFn) {
       toastFn({
         title: "Error",
@@ -111,33 +106,28 @@ export async function fetchWithAuth(
   }
 }
 
-// Obtener listado de productos
 export async function getProductos() {
-  return fetchWithAuth("http://62.169.28.77:8080/productos");
+  return fetchWithAuth(apiUrl("/productos"));
 }
 
-// Obtener historial de cajas
 export async function getHistorial() {
-  return fetchWithAuth("http://62.169.28.77:8080/api/cajas/historial");
+  return fetchWithAuth(apiUrl("/api/cajas/historial"));
 }
 
-// Agregar movimiento a caja
 export async function agregarMovimiento(data: any) {
-  return fetchWithAuth("http://62.169.28.77:8080/api/cajas/movimiento", {
+  return fetchWithAuth(apiUrl("/api/cajas/movimiento"), {
     method: "POST",
     body: JSON.stringify(data),
     headers: { "Content-Type": "application/json" },
   });
 }
 
-// Obtener caja actual con token y usuario
 export async function fetchWithToken() {
   const usuarioStr = typeof window !== "undefined" ? localStorage.getItem("usuario") : null;
   const usuario = usuarioStr ? JSON.parse(usuarioStr) : {};
-  return fetchWithAuth(`http://62.169.28.77:8080/api/cajas/actual?dniUsuario=${usuario.dni}`);
+  return fetchWithAuth(apiUrl(`/api/cajas/actual?dniUsuario=${usuario.dni}`));
 }
 
-// Obtener boletas con filtros (page, limit, search, from, to)
 export async function getBoletas({ page, limit, search, from, to }: {
   page: number,
   limit: number,
@@ -152,50 +142,43 @@ export async function getBoletas({ page, limit, search, from, to }: {
     ...(from ? { from } : {}),
     ...(to ? { to } : {})
   });
-  return fetchWithAuth(`http://62.169.28.77:8080/api/boletas?${params}`);
+  return fetchWithAuth(apiUrl(`/api/boletas?${params}`));
 }
 
-// Nuevo: Crear producto (POST)
-// data debe ser el objeto ProductoRequest (ver backend)
 export async function crearProducto(data: any) {
-  return fetchWithAuth("http://62.169.28.77:8080/productos/nuevo", {
+  return fetchWithAuth(apiUrl("/productos/nuevo"), {
     method: "POST",
     body: JSON.stringify(data),
     headers: { "Content-Type": "application/json" },
   });
 }
 
-// Nuevo: Actualizar producto por código de barras (PUT)
 export async function actualizarProducto(codigoBarras: string, data: any) {
-  return fetchWithAuth(`http://62.169.28.77:8080/productos/${codigoBarras}`, {
+  return fetchWithAuth(apiUrl(`/productos/${codigoBarras}`), {
     method: "PUT",
     body: JSON.stringify(data),
     headers: { "Content-Type": "application/json" },
   });
 }
 
-// Nuevo: Eliminar producto por código de barras (DELETE)
 export async function eliminarProducto(codigoBarras: string) {
-  return fetchWithAuth(`http://62.169.28.77:8080/productos/${codigoBarras}`, {
+  return fetchWithAuth(apiUrl(`/productos/${codigoBarras}`), {
     method: "DELETE"
   });
 }
 
-// Obtener stock protegido por token
 export async function getStock() {
-  return fetchWithAuth("http://62.169.28.77:8080/api/stock");
+  return fetchWithAuth(apiUrl("/api/stock"));
 }
 
-// Actualizar stock protegido por token
 export async function actualizarStock(id: number, data: any) {
-  return fetchWithAuth(`http://62.169.28.77:8080/api/stock/${id}`, {
+  return fetchWithAuth(apiUrl(`/api/stock/${id}`), {
     method: "PUT",
     body: JSON.stringify(data),
     headers: { "Content-Type": "application/json" },
   });
 }
 
-// Obtener resumen del dashboard protegido por JWT
 export async function getDashboardResumen() {
-  return fetchWithAuth("http://62.169.28.77:8080/api/dashboard/resumen");
+  return fetchWithAuth(apiUrl("/api/dashboard/resumen"));
 }

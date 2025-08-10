@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { apiUrl } from "@/components/config"
 
 import { Edit, Plus, Search, Trash2, User, Users, KeyRound } from "lucide-react"
 import {
@@ -131,7 +132,7 @@ export default function UsuariosPage() {
 
     setIsEnviando(true)
     try {
-      const res = await fetchConAuth("http://62.169.28.77:8080/auth/register", {
+      const res = await fetchConAuth(apiUrl("/auth/register"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -185,7 +186,7 @@ export default function UsuariosPage() {
     }
 
     try {
-      const res = await fetchConAuth(`http://62.169.28.77:8080/usuarios/${editandoUsuario.id}`, {
+      const res = await fetchConAuth(apiUrl(`/usuarios/${editandoUsuario.id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -214,7 +215,7 @@ export default function UsuariosPage() {
   const eliminarUsuario = async () => {
     if (!usuarioAEliminar) return
     try {
-      const res = await fetchConAuth(`http://62.169.28.77:8080/usuarios/${usuarioAEliminar.id}`, {
+      const res = await fetchConAuth(apiUrl(`/usuarios/${usuarioAEliminar.id}`), {
         method: "DELETE"
       })
       if (res.ok) {
@@ -235,7 +236,7 @@ export default function UsuariosPage() {
       toast({ title: "Sesión expirada", description: "Por favor, inicia sesión de nuevo", variant: "destructive" });
       return;
     }
-    fetch("http://62.169.28.77:8080/usuarios", {
+    fetch(apiUrl("/usuarios"), {
       headers: {
         "Authorization": `Bearer ${token}`,
       }
