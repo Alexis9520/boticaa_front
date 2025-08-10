@@ -1404,7 +1404,7 @@ export default function ProductosPage() {
                       onChange={(e) =>
                         setEditandoProducto({
                           ...editandoProducto,
-                          principio_activo: e.target.value,
+                           principioActivo: e.target.value,
                         })
                       }
                     />
@@ -1416,7 +1416,7 @@ export default function ProductosPage() {
                       onValueChange={(value) =>
                         setEditandoProducto({
                           ...editandoProducto,
-                          tipo_medicamento: value,
+                          tipoMedicamento: value,
                         })
                       }
                     >
