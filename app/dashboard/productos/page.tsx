@@ -265,8 +265,8 @@ export default function ProductosPage() {
 
   // Gestión de lotes - edición de producto
   const agregarLoteAEdicion = () => {
-    if (!loteEnEdicion?.cantidadUnidades || !loteEnEdicion.fechaVencimiento || !loteEnEdicion.precioCompra) {
-      toast({ title: "Error", description: "Completa todos los campos del lote", variant: "destructive" })
+    if (!loteEnEdicion?.cantidadUnidades || !loteEnEdicion.fechaVencimiento) {
+      toast({ title: "Error", description: "Completa todos los campos obligatorios del lote", variant: "destructive" })
       return
     }
     setEditandoProducto((prev: any) => ({
