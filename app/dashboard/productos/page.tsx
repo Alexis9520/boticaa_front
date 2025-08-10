@@ -222,7 +222,7 @@ export default function ProductosPage() {
 
   // Gestión de lotes - nuevo producto
   const agregarLoteANuevo = () => {
-    if (!nuevoLote.cantidadUnidades || !nuevoLote.fechaVencimiento || !nuevoLote.precioCompra) {
+    if (!nuevoLote.cantidadUnidades || !nuevoLote.fechaVencimiento ) {
       toast({ title: "Error", description: "Completa todos los campos del lote", variant: "destructive" })
       return
     }
