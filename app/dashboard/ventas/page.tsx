@@ -17,13 +17,13 @@ import {
   Receipt,
   User2,
   FileText,
+  ArrowDownUp
 } from "lucide-react"
 import { DateRangePicker } from "@/components/date-range-picker"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import { getBoletas } from "@/lib/api"
-// Si necesitas hacer algún fetch directo, importa apiUrl así:
-import { apiUrl } from "@/components/config"
+// import { apiUrl } from "@/components/config" // (no usado aquí, puedes quitarlo si no lo necesitas)
 
 type ProductoVendido = {
   codBarras: string
@@ -76,6 +76,11 @@ function formatFechaHora(fechaString: string) {
   }/${fecha.getFullYear()} ${fecha.getHours().toString().padStart(2, "0")}:${
     fecha.getMinutes().toString().padStart(2, "0")
   }`
+}
+
+function safeTime(fechaString: string): number {
+  const t = new Date(fechaString).getTime()
+  return isNaN(t) ? 0 : t
 }
 
 /**
@@ -158,6 +163,9 @@ export default function VentasPage() {
   const [busquedaBoletas, setBusquedaBoletas] = useState("")
   const [rangoFechasBoletas, setRangoFechasBoletas] = useState<Rango>({ from: undefined, to: undefined })
 
+  // Toggle opcional para invertir (si quieres dar opción al usuario)
+  const [ordenDesc, setOrdenDesc] = useState(true)
+
   useEffect(() => {
     setPaginaActual(1)
   }, [busquedaBoletas, rangoFechasBoletas])
@@ -165,8 +173,7 @@ export default function VentasPage() {
   useEffect(() => {
     const fetchBoletas = async () => {
       try {
-        // --- FILTRO DE FECHAS CORRECTO ---
-        // Si hay un rango, suma un día al "to" para incluir el día completo.
+        // Filtrado de fechas (incluye día completo final)
         let from = rangoFechasBoletas.from
           ? rangoFechasBoletas.from.toISOString().slice(0, 10)
           : undefined
@@ -180,13 +187,18 @@ export default function VentasPage() {
 
         const data = await getBoletas({
           page: paginaActual,
+            /* Si tu API acepta parámetros de orden, agrega algo así:
+               order: ordenDesc ? "desc" : "asc",
+               sort: "fecha"
+            */
           limit: tamanoPagina,
           search: busquedaBoletas,
           from,
           to,
-        });
+        })
+
         if (Array.isArray(data.boletas)) {
-          const boletasAdaptadas = data.boletas.map((b: any) => ({
+          const boletasAdaptadas: Boleta[] = data.boletas.map((b: any) => ({
             ...b,
             numero: b.numero ?? b.boleta ?? "",
             fecha: b.fecha ?? b.fecha_venta ?? "",
@@ -198,6 +210,13 @@ export default function VentasPage() {
             usuario: b.usuario ?? b.usuario_nombre ?? "",
             productos: b.productos ?? b.detalles ?? [],
           }))
+
+          // Orden descendente por fecha (más recientes primero)
+          boletasAdaptadas.sort((a, b) => {
+            const diff = safeTime(b.fecha) - safeTime(a.fecha)
+            return ordenDesc ? diff : -diff
+          })
+
           setBoletas(boletasAdaptadas)
           setTotalBoletas(Number(data.total) || 0)
         } else {
@@ -210,7 +229,7 @@ export default function VentasPage() {
       }
     }
     fetchBoletas()
-  }, [paginaActual, tamanoPagina, busquedaBoletas, rangoFechasBoletas])
+  }, [paginaActual, tamanoPagina, busquedaBoletas, rangoFechasBoletas, ordenDesc])
 
   const totalPaginas = Math.ceil(totalBoletas / tamanoPagina) || 1
 
@@ -230,7 +249,6 @@ export default function VentasPage() {
     ]
     downloadCSV("boletas.csv", rows)
   }
-
 
   return (
     <div className="flex flex-col gap-5">
@@ -260,13 +278,22 @@ export default function VentasPage() {
             <CardDescription>Visualiza, busca y exporta todas las boletas de ventas</CardDescription>
           </div>
           <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOrdenDesc(o => !o)}
+              title={ordenDesc ? "Mostrar más antiguas primero" : "Mostrar más recientes primero"}
+            >
+              <ArrowDownUp className="mr-2 h-4 w-4" />
+              {ordenDesc ? "Recientes" : "Antiguas"}
+            </Button>
             <Button variant="outline" onClick={exportarBoletas}>
               <Download className="mr-2 h-4 w-4" />
-              Exportar CSV
+              CSV
             </Button>
             <Button variant="outline" onClick={() => exportarBoletasPDF(boletas)}>
               <Download className="mr-2 h-4 w-4" />
-              Exportar PDF
+              PDF
             </Button>
           </div>
         </CardHeader>
@@ -304,46 +331,46 @@ export default function VentasPage() {
           </div>
 
           {/* Paginación arriba */}
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <label>
-                <span className="mr-2">Boletas por página:</span>
-                <select
-                  value={tamanoPagina}
-                  onChange={e => {
-                    setTamanoPagina(Number(e.target.value));
-                    setPaginaActual(1);
-                  }}
-                  className="border rounded px-2 py-1"
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <label>
+                  <span className="mr-2">Boletas por página:</span>
+                  <select
+                    value={tamanoPagina}
+                    onChange={e => {
+                      setTamanoPagina(Number(e.target.value))
+                      setPaginaActual(1)
+                    }}
+                    className="border rounded px-2 py-1"
+                  >
+                    {[5, 10, 20, 50].map(size => (
+                      <option key={size} value={size}>{size}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPaginaActual(prev => Math.max(1, prev - 1))}
+                  disabled={paginaActual === 1}
                 >
-                  {[5, 10, 20, 50].map(size => (
-                    <option key={size} value={size}>{size}</option>
-                  ))}
-                </select>
-              </label>
+                  Anterior
+                </Button>
+                <span className="text-sm">
+                  Página <b>{paginaActual}</b> de <b>{totalPaginas}</b>
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPaginaActual(prev => Math.min(totalPaginas, prev + 1))}
+                  disabled={paginaActual === totalPaginas || totalPaginas === 0}
+                >
+                  Siguiente
+                </Button>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPaginaActual(prev => Math.max(1, prev - 1))}
-                disabled={paginaActual === 1}
-              >
-                Anterior
-              </Button>
-              <span className="text-sm">
-                Página <b>{paginaActual}</b> de <b>{totalPaginas}</b>
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPaginaActual(prev => Math.min(totalPaginas, prev + 1))}
-                disabled={paginaActual === totalPaginas || totalPaginas === 0}
-              >
-                Siguiente
-              </Button>
-            </div>
-          </div>
 
           <div className="rounded-md border overflow-x-auto">
             <Table>
@@ -360,7 +387,7 @@ export default function VentasPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {boletas.length > 0 ? [...boletas].reverse().map(boleta => (
+                {boletas.length > 0 ? boletas.map(boleta => (
                   <React.Fragment key={boleta.id}>
                     <TableRow className="transition hover:bg-blue-50/30">
                       <TableCell className="font-bold text-blue-700">{boleta.numero}</TableCell>
@@ -402,7 +429,6 @@ export default function VentasPage() {
                             : <ChevronRight className="h-4 w-4" />}
                           <span className="sr-only">{boletaExpandida === boleta.id ? "Ocultar" : "Ver más"}</span>
                         </Button>
-                        
                       </TableCell>
                     </TableRow>
                     {boletaExpandida === boleta.id && (
@@ -428,12 +454,10 @@ export default function VentasPage() {
                                     <TableCell>{prod.precio}</TableCell>
                                   </TableRow>
                                 ))}
-                                {/* Fila: Total de Compra */}
                                 <TableRow>
                                   <TableCell colSpan={3} className="font-semibold text-right">Total</TableCell>
                                   <TableCell className="font-semibold">{boleta.totalCompra}</TableCell>
                                 </TableRow>
-                                {/* Fila: Vuelto */}
                                 <TableRow>
                                   <TableCell colSpan={3} className="font-semibold text-right">Vuelto</TableCell>
                                   <TableCell className="font-semibold">{boleta.vuelto}</TableCell>
