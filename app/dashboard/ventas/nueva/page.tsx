@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,8 +12,8 @@ import { Separator } from "@/components/ui/separator"
 import { useToast } from "@/hooks/use-toast"
 import { ArrowLeft, Minus, Plus, Search, Trash2, X, Layers, Package } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import TicketPrint from "@/components/TicketPrint"
 import { apiUrl } from "@/components/config"
+import { buildTicketHTML, VentaPreview } from "@/lib/print-utils"
 
 interface Producto {
   codigoBarras: string
@@ -43,6 +43,9 @@ interface UsuarioSesion {
   rol: string
 }
 
+/**
+ * Helper fetch con token.
+ */
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
   if (!token) {
@@ -74,14 +77,76 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
   }
 }
 
-// Generador de número único de boleta (local, para ejemplo)
 function generarNumeroBoleta(serie = "B") {
   const now = new Date()
   const yyyy = now.getFullYear()
   const mm = String(now.getMonth() + 1).padStart(2, '0')
   const dd = String(now.getDate()).padStart(2, '0')
-  const rand = Math.floor(Math.random() * 90000) + 10000 // 5 dígitos aleatorios
+  const rand = Math.floor(Math.random() * 90000) + 10000
   return `${serie}-${yyyy}${mm}${dd}-${rand}`
+}
+
+function buildVentaPreviewFromState(params: {
+  numero: string
+  fecha: string
+  carrito: ProductoCarrito[]
+  total: number
+  metodoPago: "efectivo" | "yape" | "mixto"
+  montoEfectivo: number
+  montoYape: number
+  nombreCliente: string
+  dniCliente: string
+  nombreVendedor?: string
+}): VentaPreview {
+  const { numero, fecha, carrito, total, metodoPago, montoEfectivo, montoYape, nombreCliente, dniCliente, nombreVendedor } = params
+  const items: VentaPreview["items"] = []
+  carrito.forEach(p => {
+    const pu = Math.max(0, (p.precioVentaUnd - (p.descuento ?? 0)))
+    if (p.cantidadBlister > 0 && p.precioVentaBlister) {
+      const nombre = p.cantidadUnidadesBlister
+        ? `${p.nombre} [Blister x${p.cantidadUnidadesBlister}]`
+        : `${p.nombre} [Blister]`
+      items.push({
+        nombre,
+        cantidad: p.cantidadBlister,
+        precio: p.precioVentaBlister,
+        subtotal: p.precioVentaBlister * p.cantidadBlister,
+      })
+    }
+    if (p.cantidadUnidad > 0) {
+      items.push({
+        nombre: `${p.nombre} [Unidad]`,
+        cantidad: p.cantidadUnidad,
+        precio: pu,
+        subtotal: pu * p.cantidadUnidad,
+      })
+    }
+  })
+
+  let nombreMetodo = "EFECTIVO"
+  if (metodoPago === "yape") nombreMetodo = "YAPE"
+  if (metodoPago === "mixto") nombreMetodo = "MIXTO"
+
+  const pagado = (metodoPago === "efectivo" ? montoEfectivo : 0) +
+                 (metodoPago === "yape" ? montoYape : 0) +
+                 (metodoPago === "mixto" ? (montoEfectivo + montoYape) : 0)
+  const vuelto = Math.max(0, pagado - total)
+
+  return {
+    numero,
+    fecha,
+    cliente: nombreCliente,
+    dni: dniCliente || undefined,
+    vendedor: nombreVendedor || "",
+    items,
+    total,
+    metodo: {
+      nombre: nombreMetodo,
+      efectivo: metodoPago === "efectivo" || metodoPago === "mixto" ? (montoEfectivo || undefined) : undefined,
+      digital: metodoPago === "yape" || metodoPago === "mixto" ? (montoYape || undefined) : undefined,
+      vuelto: vuelto || undefined,
+    },
+  }
 }
 
 export default function NuevaVentaPage() {
@@ -89,14 +154,19 @@ export default function NuevaVentaPage() {
   const [productos, setProductos] = useState<Producto[]>([])
   const [resultados, setResultados] = useState<Producto[]>([])
   const [carrito, setCarrito] = useState<ProductoCarrito[]>([])
-  const [metodoPago, setMetodoPago] = useState("efectivo")
+  const [metodoPago, setMetodoPago] = useState<"efectivo" | "yape" | "mixto">("efectivo")
   const [montoEfectivo, setMontoEfectivo] = useState("")
   const [montoYape, setMontoYape] = useState("")
   const [mostrarResultados, setMostrarResultados] = useState(false)
   const [dniCliente, setDniCliente] = useState("")
   const [nombreCliente, setNombreCliente] = useState("")
   const [usuarioSesion, setUsuarioSesion] = useState<UsuarioSesion | null>(null)
-  const [configuracionGeneral, setConfiguracionGeneral] = useState(() => {
+
+  // Caja
+  const [cajaAbierta, setCajaAbierta] = useState<boolean | null>(null) // null = no verificado / cargando
+  const [cargandoCaja, setCargandoCaja] = useState(false)
+
+  const [configuracionGeneral] = useState(() => {
     if (typeof window !== "undefined") {
       const data = localStorage.getItem("configuracionGeneral")
       return (
@@ -119,7 +189,8 @@ export default function NuevaVentaPage() {
       moneda: "S/",
     }
   })
-  const [configuracionBoleta, setConfiguracionBoleta] = useState(() => {
+
+  const [configuracionBoleta] = useState(() => {
     if (typeof window !== "undefined") {
       const data = localStorage.getItem("configuracionBoleta")
       return (
@@ -127,7 +198,7 @@ export default function NuevaVentaPage() {
           ? JSON.parse(data)
           : {
               serieBoleta: "B",
-              mensajePie: "¡Gracias por su compra!",
+              mensajePie: "",
               mostrarLogo: true,
               imprimirAutomatico: true,
               formatoImpresion: "80mm",
@@ -136,7 +207,7 @@ export default function NuevaVentaPage() {
     }
     return {
       serieBoleta: "B",
-      mensajePie: "¡Gracias por su compra!",
+      mensajePie: "",
       mostrarLogo: true,
       imprimirAutomatico: true,
       formatoImpresion: "80mm",
@@ -145,65 +216,114 @@ export default function NuevaVentaPage() {
 
   const { toast } = useToast()
   const router = useRouter()
-  const [showTicket, setShowTicket] = useState(false)
-  const [ventaGenerada, setVentaGenerada] = useState<any>(null)
-  const [printSize, setPrintSize] = useState<"58mm" | "80mm">("58mm")
 
-  useEffect(() => {
-    const size = localStorage.getItem("ticketPrintSize") as "58mm" | "80mm"
-    if (size) setPrintSize(size)
-  }, [])
-
-  useEffect(() => {
-    if (showTicket && ventaGenerada) {
-      setTimeout(() => {
-        window.print()
-        setShowTicket(false)
-        setVentaGenerada(null)
-        router.push("/dashboard/ventas/nueva")
-      }, 300)
+  // Verificar estado de caja para el usuario
+  const checkCajaAbierta = useCallback(async (showMessage = false): Promise<boolean> => {
+    if (!usuarioSesion?.dni) {
+      setCajaAbierta(false)
+      return false
     }
-  }, [showTicket, ventaGenerada, router])
+    try {
+      setCargandoCaja(true)
+      // Endpoint verdadero según tu controlador: /api/cajas/actual?dniUsuario=...
+      const url = apiUrl(`/api/cajas/actual?dniUsuario=${encodeURIComponent(usuarioSesion.dni)}`)
+      const resp = await fetchWithAuth(url)
 
+      if (!resp) {
+        // 204 o null => no hay caja abierta
+        setCajaAbierta(false)
+        if (showMessage) {
+          toast({
+            title: "No hay caja abierta",
+            description: "Debes abrir una caja antes de realizar la venta.",
+            variant: "destructive",
+          })
+        }
+        return false
+      }
+
+      // Aquí adaptamos la condición a tu DTO.
+      // Suponiendo que CajaResumenDTO TAL VEZ tiene:
+      // - estado: "ABIERTA" | "CERRADA"
+      // - fechaCierre: null mientras está abierta
+      // Ajusta si tu implementación difiere.
+      const abierta =
+        (resp.estado && resp.estado.toUpperCase() === "ABIERTA") ||
+        (!resp.estado && !resp.fechaCierre)
+
+      setCajaAbierta(abierta)
+      if (showMessage && !abierta) {
+        toast({
+          title: "Caja no disponible",
+          description: "La caja actual está cerrada.",
+          variant: "destructive",
+        })
+      }
+      return abierta
+    } catch (err) {
+      setCajaAbierta(false)
+      if (showMessage) {
+        toast({
+          title: "Error verificando caja",
+          description: "No se pudo consultar el estado de la caja.",
+          variant: "destructive",
+        })
+      }
+      return false
+    } finally {
+      setCargandoCaja(false)
+    }
+  }, [usuarioSesion?.dni, toast])
+
+  // Cargar productos
   useEffect(() => {
     const fetchProductos = async () => {
       try {
         const data = await fetchWithAuth(apiUrl("/productos"))
         setProductos(data)
-      } catch (e) {
+      } catch {
         toast({ title: "Error", description: "No se pudo cargar productos", variant: "destructive" })
       }
     }
     fetchProductos()
   }, [toast])
 
+  // Cargar usuario y luego verificar caja
   useEffect(() => {
-    const usuarioStr = typeof window !== "undefined" ? localStorage.getItem("usuario") : null;
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const usuarioStr = typeof window !== "undefined" ? localStorage.getItem("usuario") : null
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
     if (usuarioStr && token) {
       try {
-        const usuario = JSON.parse(usuarioStr);
-        setUsuarioSesion(usuario);
-      } catch (e) {
-        setUsuarioSesion(null);
-        localStorage.removeItem("usuario");
-        localStorage.removeItem("token");
-        toast({ title: "Error", description: "No has iniciado sesión", variant: "destructive" });
-        router.push("/login");
+        const usuario = JSON.parse(usuarioStr)
+        setUsuarioSesion(usuario)
+      } catch {
+        setUsuarioSesion(null)
+        localStorage.removeItem("usuario")
+        localStorage.removeItem("token")
+        toast({ title: "Error", description: "No has iniciado sesión", variant: "destructive" })
+        router.push("/login")
       }
     } else {
-      setUsuarioSesion(null);
-      toast({ title: "Error", description: "No has iniciado sesión", variant: "destructive" });
-      router.push("/login");
+      setUsuarioSesion(null)
+      toast({ title: "Error", description: "No has iniciado sesión", variant: "destructive" })
+      router.push("/login")
     }
-  }, [toast, router]);
+  }, [toast, router])
 
-  // Calcular total de toda la venta:
+  // Llamar a checkCajaAbierta cuando ya tengamos usuarioSesion
+  useEffect(() => {
+    if (usuarioSesion?.dni) {
+      checkCajaAbierta()
+    }
+  }, [usuarioSesion?.dni, checkCajaAbierta])
+
+  // Totales
   const total = carrito.reduce((sum, item) =>
     sum +
     ((item.precioVentaBlister ?? 0) * item.cantidadBlister) +
     ((item.precioVentaUnd - (item.descuento ?? 0)) * item.cantidadUnidad)
   , 0)
+
   let vuelto = 0
   let faltante = 0
   if (metodoPago === "efectivo") {
@@ -222,7 +342,6 @@ export default function NuevaVentaPage() {
     faltante = pagado < total ? total - pagado : 0
   }
 
-  // Formulario blister/unidad en resultados
   const [blisterUnidadSeleccion, setBlisterUnidadSeleccion] = useState<{ [codigo: string]: { blisters: number, unidades: number } }>({})
 
   const buscarProductos = () => {
@@ -243,7 +362,6 @@ export default function NuevaVentaPage() {
     }
   }
 
-  // Agregar al carrito considerando blisters y unidades
   const agregarAlCarrito = (producto: Producto) => {
     const seleccion = blisterUnidadSeleccion[producto.codigoBarras] || { blisters: 0, unidades: 0 }
     const cantidadTotal = (producto.cantidadUnidadesBlister ?? 0) * seleccion.blisters + seleccion.unidades
@@ -295,14 +413,8 @@ export default function NuevaVentaPage() {
         },
       ]
     })
-    setBlisterUnidadSeleccion(prev => ({ ...prev, [producto.codigoBarras]: { blisters: 0, unidades: 0 } }))
-    setBusqueda("")
-    setResultados([])
-    setMostrarResultados(false)
-    toast({ title: "Producto añadido", description: `Se agregó "${producto.nombre}" al carrito`, variant: "default" })
   }
 
-  // Cambiar cantidad de blisters/unidades en carrito
   const cambiarCantidadCarrito = (codigoBarras: string, tipo: "blister" | "unidad", incremento: number) => {
     setCarrito(prev => {
       return prev.map(item => {
@@ -316,8 +428,8 @@ export default function NuevaVentaPage() {
         } else {
           nuevaUnidades = Math.max(0, item.cantidadUnidad + incremento)
         }
-        const total = (producto.cantidadUnidadesBlister ?? 0) * nuevaBlisters + nuevaUnidades
-        if (total > producto.cantidadGeneral) {
+        const totalTemp = (producto.cantidadUnidadesBlister ?? 0) * nuevaBlisters + nuevaUnidades
+        if (totalTemp > producto.cantidadGeneral) {
           toast({ title: "Stock insuficiente", description: `Stock insuficiente: máximo ${producto.cantidadGeneral} unidades`, variant: "destructive" })
           return item
         }
@@ -347,86 +459,64 @@ export default function NuevaVentaPage() {
 
   const procesarVenta = async () => {
     if (carrito.length === 0) {
-      toast({
-        title: "Carrito vacío",
-        description: "Agrega productos al carrito para realizar una venta",
-        variant: "destructive",
-      })
+      toast({ title: "Carrito vacío", description: "Agrega productos al carrito", variant: "destructive" })
       return
     }
 
+    // Revalidar caja
+    const abierta = await checkCajaAbierta(true)
+    if (!abierta) return
+
+    // Validaciones de pago
     if (metodoPago === "efectivo") {
       const efectivo = Number.parseFloat(montoEfectivo) || 0
       if (efectivo < total) {
-        toast({
-          title: "Monto insuficiente",
-          description: "El monto en efectivo debe ser mayor o igual al total",
-          variant: "destructive",
-        })
+        toast({ title: "Monto insuficiente", description: "El efectivo debe cubrir el total", variant: "destructive" })
         return
       }
-    }
-    if (metodoPago === "yape") {
+    } else if (metodoPago === "yape") {
       const yape = Number.parseFloat(montoYape) || 0
       if (yape < total) {
-        toast({
-          title: "Monto insuficiente",
-          description: "El monto en Yape debe ser mayor o igual al total",
-          variant: "destructive",
-        })
+        toast({ title: "Monto insuficiente", description: "El monto Yape debe cubrir el total", variant: "destructive" })
         return
       }
-    }
-    if (metodoPago === "mixto") {
+    } else if (metodoPago === "mixto") {
       const efectivo = Number.parseFloat(montoEfectivo) || 0
       const yape = Number.parseFloat(montoYape) || 0
       if (efectivo <= 0 || yape <= 0) {
-        toast({
-          title: "Montos incorrectos",
-          description: "Los montos de efectivo y Yape deben ser mayores a cero",
-          variant: "destructive",
-        })
+        toast({ title: "Montos inválidos", description: "Ambos montos deben ser > 0", variant: "destructive" })
         return
       }
       if (efectivo + yape < total) {
-        toast({
-          title: "Montos insuficientes",
-          description: "La suma de los montos debe ser igual o mayor al total",
-          variant: "destructive",
-        })
+        toast({ title: "Montos insuficientes", description: "La suma debe cubrir el total", variant: "destructive" })
         return
       }
     }
 
-    if (!nombreCliente || !usuarioSesion?.dni) {
-      toast({
-        title: "Faltan datos",
-        description: "Completa los datos del cliente",
-        variant: "destructive",
-      })
+    if (!nombreCliente || !usuarioSesion?.nombreCompleto) {
+      toast({ title: "Faltan datos", description: "Completa los datos del cliente", variant: "destructive" })
       return
     }
 
-    const dniClienteEnviar = dniCliente && dniCliente.trim() !== "" ? dniCliente.trim() : "99999999"
+    const dniClienteEnviar = dniCliente.trim()
     const numeroBoleta = generarNumeroBoleta(configuracionBoleta.serieBoleta)
 
-    // Adaptar payload para backend (envía el número)
     const ventaDTO = {
       numero: numeroBoleta,
-      dniCliente: dniClienteEnviar,
+      dniCliente: dniClienteEnviar || "",
       nombreCliente,
-      dniVendedor: usuarioSesion.dni,
-      productos: carrito.map((item) => ({
+      dniVendedor: usuarioSesion?.dni || "",
+      productos: carrito.map(item => ({
         codBarras: item.codigoBarras,
         cantidad:
           (item.cantidadUnidadesBlister ?? 0) * item.cantidadBlister +
-          item.cantidadUnidad,
+          item.cantidadUnidad
       })),
       metodoPago: {
         nombre: metodoPago.toUpperCase(),
         efectivo: (metodoPago === "efectivo" || metodoPago === "mixto") ? Number(montoEfectivo) : 0,
         digital: (metodoPago === "yape" || metodoPago === "mixto") ? Number(montoYape) : 0,
-      },
+      }
     }
 
     try {
@@ -435,47 +525,79 @@ export default function NuevaVentaPage() {
         body: JSON.stringify(ventaDTO),
       })
 
-      toast({
-        title: "Venta realizada",
-        description: "La venta se ha registrado correctamente",
-        variant: "default",
-      })
-      try {
-         const productosRes = await fetchWithAuth(apiUrl("/productos"))
-        setProductos(productosRes)
-      } catch (e) {}
-      setVentaGenerada({
+      toast({ title: "Venta realizada", description: "Venta registrada correctamente", variant: "default" })
+
+      // Generar e imprimir
+      const ventaPreview: VentaPreview = buildVentaPreviewFromState({
+        numero: numeroBoleta,
         fecha: new Date().toLocaleString(),
+        carrito,
+        total,
+        metodoPago,
+        montoEfectivo: Number(montoEfectivo) || 0,
+        montoYape: Number(montoYape) || 0,
         nombreCliente,
         dniCliente: dniClienteEnviar,
         nombreVendedor: usuarioSesion?.nombreCompleto,
-        productos: carrito,
-        total,
-        metodoPago: ventaDTO.metodoPago,
-        numero: numeroBoleta,
       })
-      setShowTicket(true)
+
+      const html = buildTicketHTML(
+        ventaPreview,
+        {
+          nombreNegocio: configuracionGeneral.nombreNegocio,
+          direccion: configuracionGeneral.direccion,
+          telefono: configuracionGeneral.telefono,
+          email: configuracionGeneral.email,
+          ruc: configuracionGeneral.ruc,
+          moneda: configuracionGeneral.moneda,
+        },
+        {
+          mensajePie: configuracionBoleta.mensajePie,
+          mostrarLogo: configuracionBoleta.mostrarLogo,
+          formatoImpresion: configuracionBoleta.formatoImpresion as any,
+        }
+      )
+
+      const previewWin = window.open("/print", "ticketPreview", "width=800,height=900")
+      if (!previewWin) {
+        toast({
+          title: "Pop-up bloqueado",
+          description: "Permite ventanas emergentes para ver/ imprimir el ticket.",
+          variant: "destructive",
+        })
+      }
+
+      try {
+        localStorage.setItem("ticket_preview_job", JSON.stringify({
+          html,
+          formato: configuracionBoleta.formatoImpresion,
+          auto: !!configuracionBoleta.imprimirAutomatico,
+        }))
+      } catch {}
+
+      // Refrescar productos y limpiar
+      try {
+        const productosRes = await fetchWithAuth(apiUrl("/productos"))
+        setProductos(productosRes)
+      } catch {}
       setCarrito([])
       setMontoEfectivo("")
       setMontoYape("")
       setMostrarResultados(false)
+      setDniCliente("")
+      setNombreCliente("")
     } catch (e: any) {
       const msg = typeof e === "string" ? e : (e?.message || "No se pudo registrar la venta")
       if (msg.includes("No hay una caja abierta")) {
-        toast({
-          title: "No hay caja abierta",
-          description: "Primero debes abrir una caja antes de realizar una venta.",
-          variant: "destructive",
-        })
+        setCajaAbierta(false)
+        toast({ title: "Caja cerrada", description: "Abre una caja antes de vender.", variant: "destructive" })
       } else {
-        toast({
-          title: "Error",
-          description: msg || "No se pudo registrar la venta",
-          variant: "destructive",
-        })
+        toast({ title: "Error", description: msg, variant: "destructive" })
       }
     }
   }
+
+  const procesarVentaDisabled = carrito.length === 0 || !cajaAbierta || cargandoCaja
 
   return (
     <div className="flex flex-col gap-6">
@@ -486,7 +608,11 @@ export default function NuevaVentaPage() {
           </Button>
           <h1 className="text-2xl font-bold tracking-tight">Nueva Venta</h1>
         </div>
+        {cajaAbierta === null && <Badge variant="outline">Verificando caja...</Badge>}
+        {cajaAbierta === false && <Badge variant="destructive">No hay caja abierta</Badge>}
+        {cajaAbierta === true && <Badge variant="default">Caja abierta</Badge>}
       </div>
+
       {/* Datos cliente */}
       <Card className="mb-2">
         <CardHeader>
@@ -503,26 +629,26 @@ export default function NuevaVentaPage() {
                 onChange={e => setDniCliente(e.target.value.replace(/[^0-9]/g, ""))}
                 maxLength={8}
                 placeholder="Opcional: 8 dígitos"
-                className="border-2 border-gray-200 focus:border-emerald-500"
                 inputMode="numeric"
               />
             </div>
             <div>
-              <Label className="font-medium" htmlFor="nombre-cliente">Nombre Cliente <span className="text-rose-600">*</span></Label>
+              <Label className="font-medium" htmlFor="nombre-cliente">
+                Nombre Cliente <span className="text-rose-600">*</span>
+              </Label>
               <Input
                 id="nombre-cliente"
                 value={nombreCliente}
                 onChange={e => setNombreCliente(e.target.value)}
                 placeholder="Nombre completo"
-                className="border-2 border-gray-200 focus:border-emerald-500"
                 required
               />
             </div>
             <div>
-              <Label className="font-medium" htmlFor="dni-vendedor">DNI Vendedor</Label>
+              <Label className="font-medium" htmlFor="vendedor">Vendedor</Label>
               <Input
-                id="dni-vendedor"
-                value={usuarioSesion?.dni || ""}
+                id="vendedor"
+                value={usuarioSesion?.nombreCompleto || ""}
                 readOnly
                 disabled
               />
@@ -530,8 +656,10 @@ export default function NuevaVentaPage() {
           </div>
         </CardContent>
       </Card>
+
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
+          {/* Buscar Productos */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle>Buscar Productos</CardTitle>
@@ -570,7 +698,9 @@ export default function NuevaVentaPage() {
                   />
                 </div>
                 <Button onClick={buscarProductos}>Buscar</Button>
+                
               </div>
+
               {mostrarResultados && (
                 <div className="mt-4">
                   <div className="flex items-center justify-between mb-2">
@@ -607,6 +737,7 @@ export default function NuevaVentaPage() {
                             producto.precioVentaUnd > 0
                               ? ((producto.descuento / producto.precioVentaUnd) * 100)
                               : 0
+                          const sel = blisterUnidadSeleccion[producto.codigoBarras] || { blisters: 0, unidades: 0 }
                           return (
                             <TableRow key={producto.codigoBarras}>
                               <TableCell className="font-medium">{producto.codigoBarras}</TableCell>
@@ -677,15 +808,14 @@ export default function NuevaVentaPage() {
                                         <Input
                                           type="number"
                                           min={0}
-                                          max={Math.floor(producto.cantidadGeneral / producto.cantidadUnidadesBlister)}
+                                          max={Math.floor(producto.cantidadGeneral / (producto.cantidadUnidadesBlister || 1))}
                                           className="w-16 h-8"
-                                          value={blisterUnidadSeleccion[producto.codigoBarras]?.blisters ?? ""}
+                                          value={sel.blisters || ""}
                                           onChange={e => {
                                             const v = Math.max(0, Number(e.target.value))
                                             setBlisterUnidadSeleccion(prev => ({
                                               ...prev,
                                               [producto.codigoBarras]: {
-                                                ...prev[producto.codigoBarras],
                                                 blisters: v,
                                                 unidades: prev[producto.codigoBarras]?.unidades ?? 0,
                                               }
@@ -698,16 +828,16 @@ export default function NuevaVentaPage() {
                                         <Input
                                           type="number"
                                           min={0}
-                                          max={producto.cantidadUnidadesBlister - 1}
+                                          max={(producto.cantidadUnidadesBlister || 1) - 1}
                                           className="w-16 h-8"
-                                          value={blisterUnidadSeleccion[producto.codigoBarras]?.unidades ?? ""}
+                                          value={sel.unidades || ""}
                                           onChange={e => {
                                             let v = Math.max(0, Number(e.target.value))
-                                            if (producto.cantidadUnidadesBlister && v >= producto.cantidadUnidadesBlister) v = producto.cantidadUnidadesBlister - 1
+                                            const maxU = (producto.cantidadUnidadesBlister || 1) - 1
+                                            if (v > maxU) v = maxU
                                             setBlisterUnidadSeleccion(prev => ({
                                               ...prev,
                                               [producto.codigoBarras]: {
-                                                ...prev[producto.codigoBarras],
                                                 blisters: prev[producto.codigoBarras]?.blisters ?? 0,
                                                 unidades: v,
                                               }
@@ -724,7 +854,7 @@ export default function NuevaVentaPage() {
                                         min={0}
                                         max={producto.cantidadGeneral}
                                         className="w-16 h-8"
-                                        value={blisterUnidadSeleccion[producto.codigoBarras]?.unidades ?? ""}
+                                        value={sel.unidades || ""}
                                         onChange={e => {
                                           const v = Math.max(0, Number(e.target.value))
                                           setBlisterUnidadSeleccion(prev => ({
@@ -744,7 +874,8 @@ export default function NuevaVentaPage() {
                                 <Button
                                   size="sm"
                                   onClick={() => agregarAlCarrito(producto)}
-                                  disabled={producto.cantidadGeneral === 0}
+                                  // Si quieres bloquear agregar al carrito sin caja: habilita el siguiente disabled
+                                  disabled={producto.cantidadGeneral === 0 /* || !cajaAbierta */}
                                 >
                                   <Plus className="h-4 w-4 mr-1" />
                                   Agregar
@@ -760,6 +891,8 @@ export default function NuevaVentaPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Carrito */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle>Carrito de Compras</CardTitle>
@@ -867,6 +1000,8 @@ export default function NuevaVentaPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Pago y Resumen */}
         <div className="space-y-6">
           <Card>
             <CardHeader className="pb-3">
@@ -874,7 +1009,7 @@ export default function NuevaVentaPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <RadioGroup value={metodoPago} onValueChange={v => {
-                setMetodoPago(v)
+                setMetodoPago(v as any)
                 setMontoEfectivo("")
                 setMontoYape("")
               }}>
@@ -903,7 +1038,7 @@ export default function NuevaVentaPage() {
                     onChange={(e) => setMontoEfectivo(e.target.value)}
                   />
                   {faltante > 0 && (
-                    <div className="text-sm text-red-600">Faltan S/ {faltante.toFixed(2)} para completar el pago.</div>
+                    <div className="text-sm text-red-600">Faltan S/ {faltante.toFixed(2)} para completar.</div>
                   )}
                 </div>
               )}
@@ -919,7 +1054,7 @@ export default function NuevaVentaPage() {
                     onChange={(e) => setMontoYape(e.target.value)}
                   />
                   {faltante > 0 && (
-                    <div className="text-sm text-red-600">Faltan S/ {faltante.toFixed(2)} para completar el pago.</div>
+                    <div className="text-sm text-red-600">Faltan S/ {faltante.toFixed(2)} para completar.</div>
                   )}
                 </div>
               )}
@@ -948,13 +1083,14 @@ export default function NuevaVentaPage() {
                     />
                   </div>
                   {faltante > 0 && (
-                    <div className="text-sm text-red-600">Faltan S/ {faltante.toFixed(2)} para completar el pago.</div>
+                    <div className="text-sm text-red-600">Faltan S/ {faltante.toFixed(2)} para completar.</div>
                   )}
                 </div>
               )}
             </CardContent>
           </Card>
-          <Card>
+
+            <Card>
             <CardHeader className="pb-3">
               <CardTitle>Resumen de Venta</CardTitle>
             </CardHeader>
@@ -968,7 +1104,7 @@ export default function NuevaVentaPage() {
                   <span>Total:</span>
                   <span>S/ {total.toFixed(2)}</span>
                 </div>
-                {(vuelto > 0) && (
+                {vuelto > 0 && (
                   <div className="flex justify-between text-emerald-600">
                     <span>Vuelto:</span>
                     <span>S/ {vuelto.toFixed(2)}</span>
@@ -976,22 +1112,22 @@ export default function NuevaVentaPage() {
                 )}
               </div>
               <Separator />
-              <Button className="w-full" size="lg" onClick={procesarVenta} disabled={carrito.length === 0}>
-                Procesar Venta
+              <Button
+                className="w-full"
+                size="lg"
+                onClick={procesarVenta}
+                disabled={procesarVentaDisabled}
+              >
+                {cargandoCaja
+                  ? "Verificando caja..."
+                  : cajaAbierta
+                    ? "Procesar Venta"
+                    : "Abrir caja para vender"}
               </Button>
             </CardContent>
           </Card>
         </div>
       </div>
-      {showTicket && ventaGenerada && (
-        <div className="ticket-print">
-          <TicketPrint
-            venta={ventaGenerada}
-            configuracionGeneral={configuracionGeneral}
-            configuracionBoleta={configuracionBoleta}
-          />
-        </div>
-      )}
     </div>
   )
 }

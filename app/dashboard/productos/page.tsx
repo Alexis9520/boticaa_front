@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import React from "react" // CHANGE: para usar <React.Fragment key=...>
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -25,9 +26,24 @@ import {
 } from "@/components/ui/tooltip"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Edit, Plus, Search, Trash2, Package, Calendar, DollarSign, Layers, Box, AlertCircle } from "lucide-react"
+import {
+  Edit,
+  Plus,
+  Search,
+  Trash2,
+  Package,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  LayoutList,
+  Layers,
+  Box,
+  Minimize2,
+  Maximize2
+} from "lucide-react"
 import { fetchWithAuth } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
+import clsx from "clsx"
 
 type StockLote = {
   codigoStock?: string
@@ -56,7 +72,6 @@ type Producto = {
   stocks?: StockLote[]
 }
 
-
 function generarCodigoLote(producto: Producto, index: number) {
   return `${producto.codigoBarras}-${index + 1}`
 }
@@ -65,6 +80,13 @@ export default function ProductosPage() {
   const [productos, setProductos] = useState<Producto[]>([])
   const [busqueda, setBusqueda] = useState("")
   const [lotesModalProducto, setLotesModalProducto] = useState<Producto | null>(null)
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
+  const [densityCompact, setDensityCompact] = useState<boolean>(false)
+
+  // Paginación (front)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+
   const [nuevoProducto, setNuevoProducto] = useState({
     codigo_barras: "",
     nombre: "",
@@ -93,7 +115,9 @@ export default function ProductosPage() {
   const [loteEnEdicion, setLoteEnEdicion] = useState<StockLote | null>(null)
   const { toast } = useToast()
 
+  // --- Helpers ---
   const calcularDiasParaVencer = (fechaVencimiento: string) => {
+    if (!fechaVencimiento) return 0
     const hoy = new Date()
     const fechaVence = new Date(fechaVencimiento)
     const diffTime = fechaVence.getTime() - hoy.getTime()
@@ -110,7 +134,7 @@ export default function ProductosPage() {
 
   const cargarProductos = async () => {
     try {
-       const data = await fetchWithAuth(apiUrl("/productos"))
+      const data = await fetchWithAuth(apiUrl("/productos"))
       setProductos(data)
     } catch (err) {
       toast({
@@ -125,14 +149,30 @@ export default function ProductosPage() {
     cargarProductos()
   }, [])
 
-  const productosFiltrados = productos.filter(
-    (producto) =>
-      producto.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-      producto.codigoBarras.toLowerCase().includes(busqueda.toLowerCase()) ||
-      (producto.categoria || "").toLowerCase().includes(busqueda.toLowerCase()) ||
-      (producto.laboratorio || "").toLowerCase().includes(busqueda.toLowerCase())
+  const productosFiltrados = useMemo(
+    () =>
+      productos.filter(
+        (producto) =>
+          producto.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+          producto.codigoBarras.toLowerCase().includes(busqueda.toLowerCase()) ||
+          (producto.categoria || "").toLowerCase().includes(busqueda.toLowerCase()) ||
+          (producto.laboratorio || "").toLowerCase().includes(busqueda.toLowerCase())
+      ),
+    [productos, busqueda]
   )
 
+  // Resetear página cuando cambie el filtro
+  useEffect(() => {
+    setPage(1)
+  }, [busqueda, productosFiltrados.length])
+
+  const totalPages = Math.max(1, Math.ceil(productosFiltrados.length / pageSize))
+  const pageItems = useMemo(
+    () => productosFiltrados.slice((page - 1) * pageSize, page * pageSize),
+    [productosFiltrados, page, pageSize]
+  )
+
+  // --- CRUD ---
   const agregarProducto = async () => {
     const stocks = (nuevoProducto.stocks || []).map((lote, idx) => ({
       codigoStock:
@@ -164,19 +204,15 @@ export default function ProductosPage() {
     }))
 
     const precioConDescuento = Number(nuevoProducto.descuento) || 0
-
     try {
-       const data = await fetchWithAuth(apiUrl("/productos/nuevo"), {
+      const data = await fetchWithAuth(apiUrl("/productos/nuevo"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           codigoBarras: nuevoProducto.codigo_barras,
           nombre: nuevoProducto.nombre,
           concentracion: nuevoProducto.concentracion,
-          cantidadGeneral: stocks.reduce(
-            (sum: number, lote: StockLote) => sum + Number(lote.cantidadUnidades),
-            0
-          ),
+          cantidadGeneral: stocks.reduce((sum: number, lote: StockLote) => sum + Number(lote.cantidadUnidades), 0),
           cantidadMinima: Number(nuevoProducto.cantidad_minima) || 0,
           precioVentaUnd: Number(nuevoProducto.precio_venta_und),
           descuento: precioConDescuento,
@@ -192,17 +228,12 @@ export default function ProductosPage() {
       })
 
       if (data) {
-        if (data.reactivado) {
-          toast({
-            title: "Producto restaurado",
-            description: "El producto fue reactivado y actualizado.",
-          })
-        } else {
-          toast({
-            title: "Producto agregado",
-            description: "El producto se ha agregado correctamente",
-          })
-        }
+        toast({
+          title: data.reactivado ? "Producto restaurado" : "Producto agregado",
+          description: data.reactivado
+            ? "El producto fue reactivado y actualizado."
+            : "El producto se ha agregado correctamente",
+        })
         setNuevoProducto({
           codigo_barras: "",
           nombre: "",
@@ -228,7 +259,7 @@ export default function ProductosPage() {
         })
         await cargarProductos()
       }
-    } catch (error) {
+    } catch {
       toast({
         title: "Error",
         description: "No se pudo agregar el producto",
@@ -237,7 +268,6 @@ export default function ProductosPage() {
     }
   }
 
-  // Gestión de lotes - nuevo producto
   const agregarLoteANuevo = () => {
     if (!nuevoLote.cantidadUnidades || !nuevoLote.fechaVencimiento) {
       toast({
@@ -253,9 +283,7 @@ export default function ProductosPage() {
         ...(nuevoProducto.stocks || []),
         {
           ...nuevoLote,
-          codigoStock:
-            nuevoLote.codigoStock ||
-            `L${(nuevoProducto.stocks.length + 1).toString().padStart(2, "0")}`,
+          codigoStock: nuevoLote.codigoStock || `L${(nuevoProducto.stocks.length + 1).toString().padStart(2, "0")}`,
         },
       ],
     })
@@ -274,7 +302,6 @@ export default function ProductosPage() {
     })
   }
 
-  // Editar producto adaptando nombres de propiedades
   const editarProducto = (producto: Producto) => {
     setEditandoProducto({
       codigo_barras: producto.codigoBarras,
@@ -300,7 +327,6 @@ export default function ProductosPage() {
     })
   }
 
-  // Gestión de lotes - edición de producto
   const agregarLoteAEdicion = () => {
     if (!loteEnEdicion?.cantidadUnidades || !loteEnEdicion.fechaVencimiento) {
       toast({
@@ -317,8 +343,7 @@ export default function ProductosPage() {
         {
           ...loteEnEdicion,
           codigoStock:
-            loteEnEdicion.codigoStock ||
-            `L${(prev.stocks.length + 1).toString().padStart(2, "0")}`,
+            loteEnEdicion.codigoStock || `L${(prev.stocks.length + 1).toString().padStart(2, "0")}`,
         },
       ],
     }))
@@ -332,14 +357,7 @@ export default function ProductosPage() {
   }
 
   const editarLoteDeEdicion = (idx: number) => {
-    setLoteEnEdicion({
-      ...(editandoProducto.stocks[idx] || {
-        codigoStock: "",
-        cantidadUnidades: 0,
-        fechaVencimiento: "",
-        precioCompra: 0,
-      }),
-    })
+    setLoteEnEdicion({ ...(editandoProducto.stocks[idx]) })
     setEditLoteIndex(idx)
   }
 
@@ -379,9 +397,7 @@ export default function ProductosPage() {
 
     const stocks = (editandoProducto.stocks || []).map(
       (lote: StockLote, idx: number) => ({
-        codigoStock:
-          lote.codigoStock ||
-          generarCodigoLote(editandoProducto as Producto, idx),
+        codigoStock: lote.codigoStock || generarCodigoLote(editandoProducto as Producto, idx),
         cantidadUnidades: Number(lote.cantidadUnidades) || 0,
         fechaVencimiento: lote.fechaVencimiento,
         precioCompra: Number(lote.precioCompra) || 0,
@@ -389,7 +405,6 @@ export default function ProductosPage() {
     )
 
     const precioConDescuento = Number(editandoProducto.descuento) || 0
-
     try {
       const res = await fetchWithAuth(
         apiUrl(`/productos/${editandoProducto.codigo_barras}`),
@@ -409,10 +424,8 @@ export default function ProductosPage() {
             descuento: precioConDescuento,
             laboratorio: editandoProducto.laboratorio,
             categoria: editandoProducto.categoria,
-            cantidadUnidadesBlister:
-              Number(editandoProducto.cantidad_unidades_blister) || 0,
-            precioVentaBlister:
-              Number(editandoProducto.precio_venta_blister) || 0,
+            cantidadUnidadesBlister: Number(editandoProducto.cantidad_unidades_blister) || 0,
+            precioVentaBlister: Number(editandoProducto.precio_venta_blister) || 0,
             principioActivo: editandoProducto.principioActivo,
             tipoMedicamento: editandoProducto.tipoMedicamento,
             presentacion: editandoProducto.presentacion,
@@ -426,15 +439,10 @@ export default function ProductosPage() {
           title: "Producto actualizado",
           description: "Los cambios se han guardado correctamente",
         })
-        setProductos((prev) =>
-          prev.map((p) =>
-            p.codigoBarras === editandoProducto.codigo_barras
-              ? {
-                  ...res,
-                  id: p.id,
-                  fechaCreacion: p.fechaCreacion,
-                }
-              : p
+        setProductos(prev =>
+          prev.map(p => p.codigoBarras === editandoProducto.codigo_barras
+            ? { ...res, id: p.id, fechaCreacion: p.fechaCreacion }
+            : p
           )
         )
         setEditandoProducto(null)
@@ -447,7 +455,7 @@ export default function ProductosPage() {
           variant: "destructive",
         })
       }
-    } catch (error) {
+    } catch {
       toast({
         title: "Error",
         description: "Error de conexión",
@@ -475,24 +483,17 @@ export default function ProductosPage() {
     }
   }
 
-  function calcularDescuentoPorcentaje(
-    precio: number,
-    precioConDescuento: number
-  ) {
-    if (!precio || !precioConDescuento || precioConDescuento >= precio) return 0
-    return Math.round((100 * (precio - precioConDescuento)) / precio)
-  }
-
+  // --- UI helpers ---
   function stockMinBadge(producto: Producto) {
     if (producto.cantidadMinima === undefined) return null
     const esCritico = producto.cantidadGeneral <= (producto.cantidadMinima ?? 0)
     return (
-      <span className="block text-xs mt-0.5">
+      <span className="block text-[10px] mt-0.5">
         Min: <span className="font-semibold">{producto.cantidadMinima}</span>
         {esCritico && (
           <Badge
             variant="destructive"
-            className="ml-2 inline-flex items-center gap-1 px-2 py-0.5"
+            className="ml-1 inline-flex items-center gap-1 px-1.5 py-0"
           >
             <AlertCircle className="w-3 h-3" /> Crítico
           </Badge>
@@ -501,9 +502,72 @@ export default function ProductosPage() {
     )
   }
 
+  function toggleExpand(codigo: string) {
+    setExpandedRows(prev => ({ ...prev, [codigo]: !prev[codigo] }))
+  }
+
+  function stockBar(producto: Producto) {
+    const min = producto.cantidadMinima ?? 0
+    const current = producto.cantidadGeneral
+    const pct = min === 0 ? 100 : Math.min(100, Math.round((current / (min * 2 || current || 1)) * 100))
+    const color =
+      current <= min
+        ? "bg-destructive"
+        : current <= min * 2
+          ? "bg-yellow-500"
+          : "bg-emerald-500"
+    return (
+      <div className="space-y-1">
+        <div className="h-1.5 w-full rounded bg-muted overflow-hidden">
+          <div
+            className={clsx("h-full transition-all", color)}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <div className="text-[11px] flex justify-between text-muted-foreground">
+          <span>{current} u</span>
+          {min > 0 && <span>Min {min}</span>}
+        </div>
+      </div>
+    )
+  }
+
+  function resumenLotes(producto: Producto) {
+    const lotes = producto.stocks || []
+    if (!lotes.length) return <span className="text-xs text-muted-foreground">Sin lotes</span>
+    const totalUnidades = lotes.reduce((s,l)=>s+l.cantidadUnidades,0)
+    const masProximo = lotes
+      .map(l => calcularDiasParaVencer(l.fechaVencimiento))
+      .sort((a,b)=>a-b)[0]
+    const critico = masProximo < 0
+    const pronto = masProximo >= 0 && masProximo <= 30
+    return (
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center gap-1 flex-wrap">
+          <Badge variant="outline" className="px-1.5 py-0 h-5 text-[11px]">
+            {lotes.length} lote{lotes.length !== 1 && "s"}
+          </Badge>
+          <Badge variant="secondary" className="px-1.5 py-0 h-5 text-[11px]">
+            {totalUnidades} u
+          </Badge>
+        </div>
+        <div className={clsx("text-[11px]",
+          critico ? "text-red-500" : pronto ? "text-yellow-500" : "text-muted-foreground"
+        )}>
+          {critico
+            ? "Vencido"
+            : pronto
+              ? `Vence en ${masProximo} d`
+              : `> ${masProximo} d`}
+        </div>
+      </div>
+    )
+  }
+
   // --- RENDER ---
   return (
     <div className="flex flex-col gap-6">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-1">
@@ -514,6 +578,14 @@ export default function ProductosPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant={densityCompact ? "outline" : "secondary"}
+            onClick={() => setDensityCompact(d => !d)}
+            title={densityCompact ? "Vista normal" : "Vista compacta"}
+          >
+            {densityCompact ? <Maximize2 className="h-4 w-4 mr-1" /> : <Minimize2 className="h-4 w-4 mr-1" />}
+            {densityCompact ? "Normal" : "Compacto"}
+          </Button>
           <Dialog>
             <DialogTrigger asChild>
               <Button>
@@ -521,7 +593,7 @@ export default function ProductosPage() {
                 Nuevo Producto
               </Button>
             </DialogTrigger>
-
+            {/* --- DIALOG NUEVO PRODUCTO --- */}
             <DialogContent className="max-w-7xl w-full">
               <DialogHeader>
                 <DialogTitle>Nuevo Producto</DialogTitle>
@@ -530,84 +602,53 @@ export default function ProductosPage() {
                 </DialogDescription>
               </DialogHeader>
               <div className="flex flex-col md:flex-row gap-12 py-4 overflow-y-auto max-h-[70vh] w-full">
-                {/* Izquierda: Características del producto */}
+                {/* Izquierda */}
                 <div className="flex-1 min-w-0 md:pl-8">
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="codigo_barras">Código de barras *</Label>
                       <Input
                         id="codigo_barras"
-                        placeholder="P001"
                         value={nuevoProducto.codigo_barras}
-                        onChange={(e) =>
-                          setNuevoProducto({
-                            ...nuevoProducto,
-                            codigo_barras: e.target.value,
-                          })
-                        }
+                        onChange={(e) => setNuevoProducto({ ...nuevoProducto, codigo_barras: e.target.value })}
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="nombre">Nombre *</Label>
                       <Input
                         id="nombre"
-                        placeholder="Nombre del producto"
                         value={nuevoProducto.nombre}
-                        onChange={(e) =>
-                          setNuevoProducto({
-                            ...nuevoProducto,
-                            nombre: e.target.value,
-                          })
-                        }
+                        onChange={(e) => setNuevoProducto({ ...nuevoProducto, nombre: e.target.value })}
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="concentracion">Concentración</Label>
                       <Input
                         id="concentracion"
-                        placeholder="500mg, 10mg, etc"
                         value={nuevoProducto.concentracion}
-                        onChange={(e) =>
-                          setNuevoProducto({
-                            ...nuevoProducto,
-                            concentracion: e.target.value,
-                          })
-                        }
+                        onChange={(e) => setNuevoProducto({ ...nuevoProducto, concentracion: e.target.value })}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="categoria"></Label>
+                      <Label htmlFor="categoria">Categoría</Label>
                       <ComboBoxCategoria
                         value={nuevoProducto.categoria}
-                        onChange={(categoria) =>
-                          setNuevoProducto({ ...nuevoProducto, categoria })
-                        }
+                        onChange={(categoria) => setNuevoProducto({ ...nuevoProducto, categoria })}
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="principio_activo">Principio Activo</Label>
                       <Input
                         id="principio_activo"
-                        placeholder="Ej: Paracetamol"
                         value={nuevoProducto.principioActivo}
-                        onChange={(e) =>
-                          setNuevoProducto({
-                            ...nuevoProducto,
-                            principioActivo: e.target.value,
-                          })
-                        }
+                        onChange={(e) => setNuevoProducto({ ...nuevoProducto, principioActivo: e.target.value })}
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="tipo_medicamento">Tipo</Label>
                       <Select
                         value={nuevoProducto.tipoMedicamento}
-                        onValueChange={(value) =>
-                          setNuevoProducto({
-                            ...nuevoProducto,
-                            tipoMedicamento: value,
-                          })
-                        }
+                        onValueChange={(value) => setNuevoProducto({ ...nuevoProducto, tipoMedicamento: value })}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Selecciona tipo" />
@@ -622,28 +663,16 @@ export default function ProductosPage() {
                       <Label htmlFor="presentacion">Presentación</Label>
                       <Input
                         id="presentacion"
-                        placeholder="Caja x 10 tabletas, Frasco 120ml, etc."
                         value={nuevoProducto.presentacion}
-                        onChange={e =>
-                          setNuevoProducto({
-                            ...nuevoProducto,
-                            presentacion: e.target.value,
-                          })
-                        }
+                        onChange={e => setNuevoProducto({ ...nuevoProducto, presentacion: e.target.value })}
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="laboratorio">Laboratorio</Label>
                       <Input
                         id="laboratorio"
-                        placeholder="Nombre del laboratorio"
                         value={nuevoProducto.laboratorio}
-                        onChange={(e) =>
-                          setNuevoProducto({
-                            ...nuevoProducto,
-                            laboratorio: e.target.value,
-                          })
-                        }
+                        onChange={(e) => setNuevoProducto({ ...nuevoProducto, laboratorio: e.target.value })}
                       />
                     </div>
                     <div className="space-y-2">
@@ -652,72 +681,49 @@ export default function ProductosPage() {
                         id="cantidad_minima"
                         type="number"
                         min="0"
-                        placeholder="Ej: 10"
                         value={nuevoProducto.cantidad_minima}
-                        onChange={(e) =>
-                          setNuevoProducto({
-                            ...nuevoProducto,
-                            cantidad_minima: e.target.value,
-                          })
-                        }
+                        onChange={(e) => setNuevoProducto({ ...nuevoProducto, cantidad_minima: e.target.value })}
                       />
                     </div>
                   </div>
                 </div>
-                {/* Derecha: Lotes, stock, precios */}
+                {/* Derecha */}
                 <div className="flex-1 md:pl-8">
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="cantidad_general">Stock inicial</Label>
+                      <Label>Stock inicial</Label>
                       <Input
-                        id="cantidad_general"
-                        type="number"
-                        placeholder="0"
-                        value={nuevoProducto.stocks.reduce(
-                          (sum, lote) => sum + Number(lote.cantidadUnidades),
-                          0
-                        )}
                         disabled
+                        value={nuevoProducto.stocks.reduce((sum, l) => sum + Number(l.cantidadUnidades), 0)}
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="cantidad_unidades_blister">
-                          <Layers className="inline h-4 w-4 mr-1 text-primary" /> Unidades por blister
+                          <Layers className="inline h-4 w-4 mr-1 text-primary" /> Unidades / blister
                         </Label>
                         <Input
                           id="cantidad_unidades_blister"
                           type="number"
                           min="1"
-                          placeholder="Ej: 10"
                           value={nuevoProducto.cantidad_unidades_blister}
-                          onChange={(e) =>
-                            setNuevoProducto({
-                              ...nuevoProducto,
-                              cantidad_unidades_blister: e.target.value,
-                            })
-                          }
+                          onChange={(e) => setNuevoProducto({ ...nuevoProducto, cantidad_unidades_blister: e.target.value })}
                         />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="precio_venta_blister">
-                          <Box className="inline h-4 w-4 mr-1 text-primary" /> Precio venta blister
+                          <Box className="inline h-4 w-4 mr-1 text-primary" /> Precio blister
                         </Label>
                         <Input
                           id="precio_venta_blister"
                           type="number"
                           step="0.01"
-                          placeholder="Ej: 5.00"
                           value={nuevoProducto.precio_venta_blister}
-                          onChange={(e) =>
-                            setNuevoProducto({
-                              ...nuevoProducto,
-                              precio_venta_blister: e.target.value,
-                            })
-                          }
+                          onChange={(e) => setNuevoProducto({ ...nuevoProducto, precio_venta_blister: e.target.value })}
                         />
                       </div>
                     </div>
+                    {/* Lotes nuevo */}
                     <div className="space-y-2">
                       <Label>Lotes (stocks)</Label>
                       <div className="grid grid-cols-4 gap-4 mb-2">
@@ -725,12 +731,7 @@ export default function ProductosPage() {
                           placeholder="Código lote"
                           className="col-span-2"
                           value={nuevoLote.codigoStock || ""}
-                          onChange={(e) =>
-                            setNuevoLote({
-                              ...nuevoLote,
-                              codigoStock: e.target.value,
-                            })
-                          }
+                          onChange={(e) => setNuevoLote({ ...nuevoLote, codigoStock: e.target.value })}
                         />
                         <Input
                           type="number"
@@ -738,24 +739,13 @@ export default function ProductosPage() {
                           className="col-span-2"
                           value={nuevoLote.cantidadUnidades || ""}
                           min={1}
-                          onChange={(e) =>
-                            setNuevoLote({
-                              ...nuevoLote,
-                              cantidadUnidades: Number(e.target.value),
-                            })
-                          }
+                          onChange={(e) => setNuevoLote({ ...nuevoLote, cantidadUnidades: Number(e.target.value) })}
                         />
                         <Input
                           type="date"
-                          placeholder="Vencimiento"
                           className="col-span-2"
                           value={nuevoLote.fechaVencimiento}
-                          onChange={e =>
-                            setNuevoLote({
-                              ...nuevoLote,
-                              fechaVencimiento: e.target.value,
-                            })
-                          }
+                          onChange={e => setNuevoLote({ ...nuevoLote, fechaVencimiento: e.target.value })}
                         />
                         <Input
                           type="number"
@@ -764,12 +754,7 @@ export default function ProductosPage() {
                           className="col-span-2"
                           value={nuevoLote.precioCompra || ""}
                           min={0}
-                          onChange={(e) =>
-                            setNuevoLote({
-                              ...nuevoLote,
-                              precioCompra: Number(e.target.value),
-                            })
-                          }
+                          onChange={(e) => setNuevoLote({ ...nuevoLote, precioCompra: Number(e.target.value) })}
                         />
                       </div>
                       <Button type="button" variant="destructive" onClick={agregarLoteANuevo}>
@@ -777,9 +762,7 @@ export default function ProductosPage() {
                       </Button>
                       <div className="mt-2">
                         {nuevoProducto.stocks.length === 0 && (
-                          <div className="text-sm text-muted-foreground">
-                            Sin lotes agregados
-                          </div>
+                          <div className="text-sm text-muted-foreground">Sin lotes agregados</div>
                         )}
                         {nuevoProducto.stocks.length > 0 && (
                           <Table>
@@ -789,24 +772,24 @@ export default function ProductosPage() {
                                 <TableHead>Unidades</TableHead>
                                 <TableHead>Vencimiento</TableHead>
                                 <TableHead>Precio Compra</TableHead>
-                                <TableHead>Acción</TableHead>
+                                <TableHead />
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {nuevoProducto.stocks.map((lote, idx) => (
-                                <TableRow key={idx}>
+                              {nuevoProducto.stocks.map((lote) => (
+                                <TableRow key={lote.codigoStock || `${lote.fechaVencimiento}-${lote.cantidadUnidades}`}>
                                   <TableCell>{lote.codigoStock}</TableCell>
                                   <TableCell>{lote.cantidadUnidades}</TableCell>
                                   <TableCell>{lote.fechaVencimiento}</TableCell>
-                                  <TableCell>
-                                    S/ {Number(lote.precioCompra).toFixed(2)}
-                                  </TableCell>
-                                  <TableCell>
+                                  <TableCell>S/ {Number(lote.precioCompra).toFixed(2)}</TableCell>
+                                  <TableCell className="text-right">
                                     <Button
                                       type="button"
                                       variant="ghost"
                                       size="icon"
-                                      onClick={() => eliminarLoteDeNuevo(idx)}
+                                      onClick={() => eliminarLoteDeNuevo(
+                                        nuevoProducto.stocks.findIndex(l => l === lote)
+                                      )}
                                     >
                                       <Trash2 className="h-4 w-4" />
                                     </Button>
@@ -825,30 +808,18 @@ export default function ProductosPage() {
                           id="precio_venta_und"
                           type="number"
                           step="0.01"
-                          placeholder="0.00"
                           value={nuevoProducto.precio_venta_und}
-                          onChange={(e) =>
-                            setNuevoProducto({
-                              ...nuevoProducto,
-                              precio_venta_und: e.target.value,
-                            })
-                          }
+                          onChange={(e) => setNuevoProducto({ ...nuevoProducto, precio_venta_und: e.target.value })}
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="descuento">Precio con descuento</Label>
+                        <Label htmlFor="descuento">Precio con descuento (opcional)</Label>
                         <Input
                           id="descuento"
                           type="number"
                           step="0.01"
-                          placeholder="0.00"
                           value={nuevoProducto.descuento}
-                          onChange={(e) =>
-                            setNuevoProducto({
-                              ...nuevoProducto,
-                              descuento: e.target.value,
-                            })
-                          }
+                          onChange={(e) => setNuevoProducto({ ...nuevoProducto, descuento: e.target.value })}
                         />
                       </div>
                     </div>
@@ -862,315 +833,334 @@ export default function ProductosPage() {
           </Dialog>
         </div>
       </div>
+
+      {/* Tabla */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle>Catálogo de Productos</CardTitle>
-          <CardDescription>
-            Lista completa de productos disponibles
-          </CardDescription>
+          <CardDescription>Vista resumida. Expande filas para detalles y lotes.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+          {/* Controles superiores */}
+          <div className="flex flex-col md:flex-row gap-4 mb-4 md:items-center">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Buscar productos..."
+                placeholder="Buscar por código, nombre, categoría, laboratorio..."
                 className="pl-8"
                 value={busqueda}
                 onChange={(e) => setBusqueda(e.target.value)}
               />
             </div>
+            <div className="flex items-center gap-2">
+              <Select value={String(pageSize)} onValueChange={v => { setPageSize(Number(v)); setPage(1) }}>
+                <SelectTrigger className="w-[130px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[5,10,25,50,100].map(s => (
+                    <SelectItem key={s} value={String(s)}>{s} / página</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="text-sm text-muted-foreground whitespace-nowrap">
+                Mostrando {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, productosFiltrados.length)} de {productosFiltrados.length}
+              </div>
+            </div>
           </div>
+
           <div className="rounded-md border overflow-x-auto">
-            <Table>
+            <Table className={clsx(densityCompact && "[&_td]:py-1 [&_th]:py-2 text-sm")}>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Código Barras</TableHead>
+                  <TableHead className="w-8"></TableHead>
+                  <TableHead>Código</TableHead>
                   <TableHead>Producto</TableHead>
-                  <TableHead>Concentración</TableHead>
-                  <TableHead>Categoría</TableHead>
-                  <TableHead>Laboratorio</TableHead>
-                  <TableHead>Principio Activo</TableHead>
-                  <TableHead>Tipo</TableHead>
+                  <TableHead>Clasificación</TableHead>
                   <TableHead>Presentación</TableHead>
+                  <TableHead className="min-w-[120px]">Stock</TableHead>
+                  <TableHead>Blister</TableHead>
                   <TableHead>Precio</TableHead>
-                  <TableHead>Stock Total</TableHead>
-                  <TableHead>Stock Mínimo</TableHead>
-                  <TableHead>Unidades/Blister</TableHead>
-                  <TableHead>Precio Blister</TableHead>
-                  <TableHead>Descuento</TableHead>
                   <TableHead>Lotes</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {productosFiltrados.map((producto) => (
-                  <TableRow key={`${producto.id}-${producto.codigoBarras}`}>
-                    <TableCell className="font-medium">
-                      {producto.codigoBarras}
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">{producto.nombre}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {producto.concentracion || (
-                        <span className="text-muted-foreground">--</span>
-                      )}
-                    </TableCell>
-                    <TableCell>{producto.categoria}</TableCell>
-                    <TableCell>{producto.laboratorio}</TableCell>
-                    <TableCell>
-                      {producto.principioActivo || (
-                        <span className="text-muted-foreground">--</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={producto.tipoMedicamento === "GENÉRICO" ? "outline" : "destructive"}>
-                        {producto.tipoMedicamento === "GENÉRICO"
-                          ? "Genérico"
-                          : producto.tipoMedicamento === "MARCA"
-                          ? "Marca"
-                          : "--"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {producto.presentacion || (
-                        <span className="text-muted-foreground">--</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      S/ {Number(producto.precioVentaUnd).toFixed(2)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          producto.cantidadGeneral <= (producto.cantidadMinima ?? 10)
-                            ? "destructive"
-                            : producto.cantidadGeneral <= (producto.cantidadMinima ?? 10) * 2
-                            ? "secondary"
-                            : "default"
-                        }
+                {pageItems.map(producto => {
+                  const expanded = !!expandedRows[producto.codigoBarras]
+                  return (
+                    <React.Fragment key={producto.codigoBarras}> {/* CHANGE: key ahora en el Fragment */}
+                      <TableRow
+                        className={clsx("transition cursor-pointer", expanded && "bg-muted/40")}
+                        onDoubleClick={() => toggleExpand(producto.codigoBarras)}
                       >
-                        {producto.cantidadGeneral} unidades
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {producto.cantidadMinima !== undefined ? (
-                        <>
-                          <span>{producto.cantidadMinima}</span>
-                          {stockMinBadge(producto)}
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground">--</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {producto.cantidadUnidadesBlister ? (
-                        <Badge variant="outline" className="text-xs">
-                          {producto.cantidadUnidadesBlister} u.
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">--</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {producto.precioVentaBlister ? (
-                        <Badge variant="outline" className="text-xs">
-                          S/ {Number(producto.precioVentaBlister).toFixed(2)}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">--</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {producto.descuento > 0 &&
-                      producto.descuento < producto.precioVentaUnd ? (
-                        <Badge variant="outline">
-                          {calcularDescuentoPorcentaje(
-                            Number(producto.precioVentaUnd),
-                            Number(producto.descuento)
-                          )}
-                          %
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {(producto.stocks?.length ?? 0) > 0 ? (
-                        <div className="space-y-2">
+                        <TableCell className="p-0 pl-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => toggleExpand(producto.codigoBarras)}
+                          >
+                            {expanded
+                              ? <ChevronDown className="h-4 w-4" />
+                              : <ChevronRight className="h-4 w-4" />}
+                          </Button>
+                        </TableCell>
+                        <TableCell className="font-medium">{producto.codigoBarras}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-medium leading-tight">
+                              {producto.nombre}
+                            </span>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span>{producto.concentracion || "--"}</span>
+                              <Badge
+                                variant={producto.tipoMedicamento === "GENÉRICO" ? "outline" : "destructive"}
+                                className="text-[10px] px-1.5 py-0"
+                              >
+                                {producto.tipoMedicamento === "GENÉRICO" ? "Genérico" : "Marca"}
+                              </Badge>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-xs leading-tight">
+                            <span className="font-medium">{producto.categoria || "--"}</span>
+                            <div className="text-muted-foreground">{producto.laboratorio || "--"}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
                           <TooltipProvider>
-                            <Tooltip>
+                            <Tooltip delayDuration={300}>
                               <TooltipTrigger asChild>
-                                <div className="cursor-pointer">
-                                  <div className="flex items-center gap-1 mb-1">
-                                    <Badge
-                                      variant="outline"
-                                      className="text-xs px-2 py-1"
-                                    >
-                                      <Package className="w-3 h-3 mr-1" />
-                                      <span className="font-semibold text-blue-600">
-                                        {producto.stocks?.[0]?.cantidadUnidades}u
-                                      </span>
-                                    </Badge>
-                                    <Badge
-                                      variant="secondary"
-                                      className="text-xs px-2 py-1"
-                                    >
-                                      <Calendar className="w-3 h-3 mr-1" />
-                                      {new Date(
-                                        producto.stocks?.[0]?.fechaVencimiento ||
-                                          ""
-                                      ).toLocaleDateString("es-PE", {
-                                        day: "2-digit",
-                                        month: "2-digit",
-                                      })}
-                                    </Badge>
-                                  </div>
-                                  <div className="text-xs text-muted-foreground flex items-center gap-1">
-                                    <span>
-                                      {producto.stocks?.length} lote
-                                      {producto.stocks?.length !== 1 ? "s" : ""}
+                                <div className="text-xs max-w-[160px] truncate">
+                                  {producto.presentacion || "--"}
+                                  {producto.principioActivo && (
+                                    <span className="text-muted-foreground ml-1">
+                                      · {producto.principioActivo}
                                     </span>
-                                    {(producto.stocks?.length ?? 0) > 1 && (
-                                      <span className="text-blue-500">
-                                        +{(producto.stocks?.length ?? 0) - 1} más
-                                      </span>
-                                    )}
-                                  </div>
+                                  )}
                                 </div>
                               </TooltipTrigger>
-                              <TooltipContent
-                                className="max-w-sm p-3"
-                                align="start"
-                              >
-                                <div className="space-y-2">
-                                  <h4 className="font-semibold text-sm mb-2 flex items-center gap-1">
-                                    <Package className="w-4 h-4" />
-                                    Lotes disponibles:
-                                  </h4>
-                                  {producto.stocks?.map((lote, idx) => {
-                                    const estadoLote = obtenerEstadoLote(
-                                      lote.fechaVencimiento
-                                    )
-                                    return (
-                                      <div
-                                        key={idx}
-                                        className="flex justify-between items-center text-xs border-b pb-1 last:border-b-0"
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <Badge variant="outline" className="text-xs">
-                                            {lote.cantidadUnidades}u
-                                          </Badge>
-                                          <div className="flex flex-col">
-                                            <span>
-                                              Vence:{" "}
-                                              {new Date(
-                                                lote.fechaVencimiento
-                                              ).toLocaleDateString("es-PE")}
-                                            </span>
-                                            <Badge
-                                              variant={estadoLote.color as any}
-                                              className="text-xs w-fit"
-                                            >
-                                              {estadoLote.texto}
-                                            </Badge>
-                                          </div>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                          <DollarSign className="w-3 h-3" />
-                                          <span className="text-green-600 font-medium">
-                                            {Number(lote.precioCompra).toFixed(2)}
-                                          </span>
-                                        </div>
-                                      </div>
-                                    )
-                                  })}
-                                  <div className="border-t pt-2 mt-2 text-xs">
-                                    <div className="flex justify-between">
-                                      <span className="font-medium">Total:</span>
-                                      <span className="text-blue-600 font-semibold">
-                                        {producto.stocks?.reduce(
-                                          (sum, lote) =>
-                                            sum + lote.cantidadUnidades,
-                                          0
-                                        )}{" "}
-                                        unidades
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="font-medium">Valor:</span>
-                                      <span className="text-green-600 font-semibold">
-                                        S/{" "}
-                                        {producto.stocks
-                                          ?.reduce(
-                                            (sum, lote) =>
-                                              sum +
-                                              lote.cantidadUnidades *
-                                                lote.precioCompra,
-                                            0
-                                          )
-                                          .toFixed(2)}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </TooltipContent>
+                              {producto.principioActivo && (
+                                <TooltipContent className="max-w-xs">
+                                  <p className="text-xs">
+                                    Principio activo: <strong>{producto.principioActivo}</strong>
+                                  </p>
+                                </TooltipContent>
+                              )}
                             </Tooltip>
                           </TooltipProvider>
-                          {(producto.stocks?.length ?? 0) > 2 && (
+                        </TableCell>
+                        <TableCell className="align-top">
+                          {stockBar(producto)}
+                          {stockMinBadge(producto)}
+                        </TableCell>
+                        <TableCell>
+                          {producto.cantidadUnidadesBlister ? (
+                            <div className="flex flex-col gap-0.5 text-xs">
+                              <Badge variant="outline" className="px-1.5 py-0 h-5">
+                                {producto.cantidadUnidadesBlister} u
+                              </Badge>
+                              {producto.precioVentaBlister && (
+                                <span className="text-muted-foreground">
+                                  S/ {Number(producto.precioVentaBlister).toFixed(2)}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">--</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm font-medium">
+                            S/ {Number(producto.precioVentaUnd).toFixed(2)}
+                          </div>
+                        </TableCell>
+                        <TableCell>{resumenLotes(producto)}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
                             <Button
                               variant="ghost"
-                              size="sm"
-                              className="h-6 px-2 text-xs w-full"
-                              onClick={() => setLotesModalProducto(producto)}
+                              size="icon"
+                              onClick={() => editarProducto(producto)}
                             >
-                              Ver todos los lotes
+                              <Edit className="h-4 w-4" />
                             </Button>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">
-                          Sin lotes
-                        </span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => eliminarProducto(producto.codigoBarras)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {expanded && (
+                        <TableRow className="bg-muted/30">
+                          <TableCell />
+                          <TableCell colSpan={9} className="py-4">
+                            <div className="grid md:grid-cols-5 gap-6 text-sm">
+                              <div className="space-y-1">
+                                <h4 className="font-semibold flex items-center gap-1">
+                                  <LayoutList className="h-4 w-4" /> Detalles
+                                </h4>
+                                <p><span className="font-medium">Principio activo:</span> {producto.principioActivo || "--"}</p>
+                                <p><span className="font-medium">Presentación:</span> {producto.presentacion || "--"}</p>
+                                <p><span className="font-medium">Tipo:</span> {producto.tipoMedicamento || "--"}</p>
+                                <p><span className="font-medium">Laboratorio:</span> {producto.laboratorio || "--"}</p>
+                              </div>
+                              <div className="space-y-2 md:col-span-2">
+                                <h4 className="font-semibold flex items-center gap-1">
+                                  <Package className="h-4 w-4" /> Lotes
+                                </h4>
+                                {(producto.stocks?.length ?? 0) === 0 && (
+                                  <div className="text-xs text-muted-foreground">Sin lotes</div>
+                                )}
+                                {(producto.stocks?.length ?? 0) > 0 && (
+                                  <div className="max-h-52 overflow-auto border rounded">
+                                    <Table className="text-xs">
+                                      <TableHeader>
+                                        <TableRow>
+                                          <TableHead className="py-1">Lote</TableHead>
+                                          <TableHead className="py-1">Unid</TableHead>
+                                          <TableHead className="py-1">Venc.</TableHead>
+                                          <TableHead className="py-1">Compra</TableHead>
+                                          <TableHead className="py-1">Estado</TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {producto.stocks?.map((l) => {
+                                          const estado = obtenerEstadoLote(l.fechaVencimiento)
+                                          const dias = calcularDiasParaVencer(l.fechaVencimiento)
+                                          return (
+                                            <TableRow key={l.codigoStock || `${l.fechaVencimiento}-${l.cantidadUnidades}`}>
+                                              <TableCell className="py-1">{l.codigoStock}</TableCell>
+                                              <TableCell className="py-1">{l.cantidadUnidades}</TableCell>
+                                              <TableCell className="py-1">
+                                                {new Date(l.fechaVencimiento).toLocaleDateString("es-PE")}
+                                              </TableCell>
+                                              <TableCell className="py-1">
+                                                S/ {Number(l.precioCompra).toFixed(2)}
+                                              </TableCell>
+                                              <TableCell className="py-1">
+                                                <Badge variant={estado.color as any} className="text-[10px]">
+                                                  {estado.texto} {dias >= 0 && `(${dias}d)`}
+                                                </Badge>
+                                              </TableCell>
+                                            </TableRow>
+                                          )
+                                        })}
+                                      </TableBody>
+                                    </Table>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="space-y-2 md:col-span-2">
+                                <h4 className="font-semibold">Resumen Inventario</h4>
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                  <div className="p-2 rounded bg-background border">
+                                    <span className="block text-muted-foreground">Unidades totales</span>
+                                    <span className="text-lg font-semibold">
+                                      {producto.cantidadGeneral}
+                                    </span>
+                                  </div>
+                                  <div className="p-2 rounded bg-background border">
+                                    <span className="block text-muted-foreground">Stock mínimo</span>
+                                    <span className="text-lg font-semibold">
+                                      {producto.cantidadMinima ?? 0}
+                                    </span>
+                                  </div>
+                                  <div className="p-2 rounded bg-background border">
+                                    <span className="block text-muted-foreground">Valor compra</span>
+                                    <span className="text-lg font-semibold">
+                                      S/ {(producto.stocks || []).reduce(
+                                        (s, l) => s + l.cantidadUnidades * l.precioCompra,
+                                        0
+                                      ).toFixed(2)}
+                                    </span>
+                                  </div>
+                                  <div className="p-2 rounded bg-background border">
+                                    <span className="block text-muted-foreground">Lotes</span>
+                                    <span className="text-lg font-semibold">
+                                      {producto.stocks?.length || 0}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="pt-2">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-xs"
+                                    onClick={() => setLotesModalProducto(producto)}
+                                  >
+                                    Ver en modal
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
                       )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => editarProducto(producto)}
-                        >
-                          <Edit className="h-4 w-4" />
-                          <span className="sr-only">Editar</span>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => eliminarProducto(producto.codigoBarras)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          <span className="sr-only">Eliminar</span>
-                        </Button>
-                      </div>
+                    </React.Fragment>
+                  )
+                })}
+                {pageItems.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">
+                      No se encontraron productos
                     </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
+          </div>
+
+          {/* Paginación inferior */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4">
+            <div className="text-xs text-muted-foreground">
+              Página {page} de {totalPages}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page === 1}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+              >
+                Anterior
+              </Button>
+              <div className="flex items-center gap-1">
+                <Input
+                  className="w-16 h-8"
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  value={page}
+                  onChange={e => {
+                    const val = Number(e.target.value)
+                    if (!Number.isNaN(val)) setPage(Math.min(Math.max(1, val), totalPages))
+                  }}
+                />
+                <span className="text-xs text-muted-foreground">/ {totalPages}</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page === totalPages}
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              >
+                Siguiente
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Modal detallado de lotes */}
-      <Dialog
-        open={!!lotesModalProducto}
-        onOpenChange={() => setLotesModalProducto(null)}
-      >
+      <Dialog open={!!lotesModalProducto} onOpenChange={() => setLotesModalProducto(null)}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1178,8 +1168,7 @@ export default function ProductosPage() {
               Lotes de {lotesModalProducto?.nombre}
             </DialogTitle>
             <DialogDescription>
-              Código: {lotesModalProducto?.codigoBarras} • Total:{" "}
-              {lotesModalProducto?.stocks?.length ?? 0} lotes
+              Código: {lotesModalProducto?.codigoBarras} • Total: {lotesModalProducto?.stocks?.length ?? 0} lotes
             </DialogDescription>
           </DialogHeader>
           {lotesModalProducto && (
@@ -1192,46 +1181,25 @@ export default function ProductosPage() {
                     <TableHead>Fecha Vencimiento</TableHead>
                     <TableHead>Precio Compra</TableHead>
                     <TableHead>Estado</TableHead>
-                    <TableHead>Días para vencer</TableHead>
+                    <TableHead>Días</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {lotesModalProducto.stocks?.map((lote, idx) => {
-                    const diasParaVencer = calcularDiasParaVencer(
-                      lote.fechaVencimiento
-                    )
+                  {lotesModalProducto.stocks?.map((lote) => {
+                    const diasParaVencer = calcularDiasParaVencer(lote.fechaVencimiento)
                     const estadoLote = obtenerEstadoLote(lote.fechaVencimiento)
                     return (
-                      <TableRow key={idx}>
+                      <TableRow key={lote.codigoStock || `${lote.fechaVencimiento}-${lote.cantidadUnidades}`}>
                         <TableCell>
-                          <Badge variant="outline" className="flex items-center gap-1">
-                            {lote.codigoStock || "—"}
-                          </Badge>
+                          <Badge variant="outline">{lote.codigoStock || "—"}</Badge>
                         </TableCell>
+                        <TableCell>{lote.cantidadUnidades}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="flex items-center gap-1">
-                            <Package className="w-3 h-3" />
-                            {lote.cantidadUnidades} unidades
-                          </Badge>
+                          {new Date(lote.fechaVencimiento).toLocaleDateString("es-PE")}
                         </TableCell>
+                        <TableCell>S/ {Number(lote.precioCompra).toFixed(2)}</TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4 text-muted-foreground" />
-                            {new Date(lote.fechaVencimiento).toLocaleDateString(
-                              "es-PE"
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <DollarSign className="w-4 h-4 text-muted-foreground" />
-                            S/ {Number(lote.precioCompra).toFixed(2)}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={estadoLote.color as any}>
-                            {estadoLote.texto}
-                          </Badge>
+                          <Badge variant={estadoLote.color as any}>{estadoLote.texto}</Badge>
                         </TableCell>
                         <TableCell>
                           <span
@@ -1239,8 +1207,8 @@ export default function ProductosPage() {
                               diasParaVencer < 0
                                 ? "text-red-600"
                                 : diasParaVencer <= 30
-                                ? "text-yellow-600"
-                                : "text-green-600"
+                                  ? "text-yellow-600"
+                                  : "text-green-600"
                             }
                           >
                             {diasParaVencer < 0
@@ -1284,9 +1252,7 @@ export default function ProductosPage() {
                     </div>
                   </div>
                   <div className="text-center">
-                    <span className="font-medium block">
-                      Próximo vencimiento
-                    </span>
+                    <span className="font-medium block">Próximo vencimiento</span>
                     <div className="text-lg font-bold text-orange-600">
                       {lotesModalProducto.stocks &&
                       lotesModalProducto.stocks.length > 0
@@ -1306,7 +1272,7 @@ export default function ProductosPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog para editar producto */}
+      {/* Dialog editar */}
       <Dialog
         open={!!editandoProducto}
         onOpenChange={() => {
@@ -1323,87 +1289,64 @@ export default function ProductosPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col md:flex-row gap-12 py-4 overflow-y-auto max-h-[70vh] w-full">
-            {/* Izquierda: Características del producto */}
             <div className="flex-1 min-w-0 md:border-r md:pr-8">
               {editandoProducto && (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="edit-codigo_barras">Código de barras *</Label>
+                    <Label>Código de barras *</Label>
                     <Input
-                      id="edit-codigo_barras"
                       value={editandoProducto.codigo_barras}
                       onChange={(e) =>
-                        setEditandoProducto({
-                          ...editandoProducto,
-                          codigo_barras: e.target.value,
-                        })
+                        setEditandoProducto({ ...editandoProducto, codigo_barras: e.target.value })
                       }
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-nombre">Nombre *</Label>
+                    <Label>Nombre *</Label>
                     <Input
-                      id="edit-nombre"
                       value={editandoProducto.nombre}
                       onChange={(e) =>
-                        setEditandoProducto({
-                          ...editandoProducto,
-                          nombre: e.target.value,
-                        })
+                        setEditandoProducto({ ...editandoProducto, nombre: e.target.value })
                       }
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-concentracion">Concentración</Label>
+                    <Label>Concentración</Label>
                     <Input
-                      id="edit-concentracion"
                       value={editandoProducto.concentracion}
                       onChange={(e) =>
-                        setEditandoProducto({
-                          ...editandoProducto,
-                          concentracion: e.target.value,
-                        })
+                        setEditandoProducto({ ...editandoProducto, concentracion: e.target.value })
                       }
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-categoria"></Label>
+                    <Label>Categoría</Label>
                     <ComboBoxCategoria
                       value={editandoProducto.categoria}
                       onChange={(categoria) =>
-                        setEditandoProducto({
-                          ...editandoProducto,
-                          categoria,
-                        })
+                        setEditandoProducto({ ...editandoProducto, categoria })
                       }
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-principio_activo">Principio Activo</Label>
+                    <Label>Principio Activo</Label>
                     <Input
-                      id="edit-principio_activo"
                       value={editandoProducto.principioActivo}
                       onChange={(e) =>
-                        setEditandoProducto({
-                          ...editandoProducto,
-                          principioActivo: e.target.value,
-                        })
+                        setEditandoProducto({ ...editandoProducto, principioActivo: e.target.value })
                       }
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-tipo_medicamento">Tipo</Label>
+                    <Label>Tipo</Label>
                     <Select
                       value={editandoProducto.tipoMedicamento}
                       onValueChange={(value) =>
-                        setEditandoProducto({
-                          ...editandoProducto,
-                          tipoMedicamento: value,
-                        })
+                        setEditandoProducto({ ...editandoProducto, tipoMedicamento: value })
                       }
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Selecciona tipo" />
+                        <SelectValue placeholder="Tipo" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="GENÉRICO">Genérico</SelectItem>
@@ -1412,110 +1355,81 @@ export default function ProductosPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="presentacion">Presentación</Label>
+                    <Label>Presentación</Label>
                     <Input
-                      id="presentacion"
-                      placeholder="Ej: Caja x 10 tabletas"
                       value={editandoProducto.presentacion}
                       onChange={e =>
-                        setEditandoProducto({
-                          ...editandoProducto,
-                          presentacion: e.target.value,
-                        })
+                        setEditandoProducto({ ...editandoProducto, presentacion: e.target.value })
                       }
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-laboratorio">Laboratorio</Label>
+                    <Label>Laboratorio</Label>
                     <Input
-                      id="edit-laboratorio"
                       value={editandoProducto.laboratorio}
                       onChange={(e) =>
-                        setEditandoProducto({
-                          ...editandoProducto,
-                          laboratorio: e.target.value,
-                        })
+                        setEditandoProducto({ ...editandoProducto, laboratorio: e.target.value })
                       }
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-cantidad_minima">
-                      Cantidad mínima (stock mínimo)
-                    </Label>
+                    <Label>Stock mínimo</Label>
                     <Input
-                      id="edit-cantidad_minima"
                       type="number"
                       min="0"
                       value={editandoProducto.cantidad_minima}
                       onChange={(e) =>
-                        setEditandoProducto({
-                          ...editandoProducto,
-                          cantidad_minima: e.target.value,
-                        })
+                        setEditandoProducto({ ...editandoProducto, cantidad_minima: e.target.value })
                       }
                     />
                   </div>
                 </div>
               )}
             </div>
-            {/* Derecha: Lotes, stock, precios */}
+            {/* Derecha: lotes y precios */}
             <div className="flex-1 min-w-0 md:pl-8">
               {editandoProducto && (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="edit-cantidad_general">Stock</Label>
+                    <Label>Stock</Label>
                     <Input
-                      id="edit-cantidad_general"
-                      type="number"
+                      disabled
                       value={Array.isArray(editandoProducto.stocks)
                         ? editandoProducto.stocks.reduce(
-                            (sum: number, lote: StockLote) =>
-                              sum + Number(lote.cantidadUnidades),
+                            (sum: number, lote: StockLote) => sum + Number(lote.cantidadUnidades),
                             0
                           )
                         : editandoProducto.cantidad_general}
-                      disabled
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="edit-cantidad_unidades_blister">
-                        <Layers className="inline h-4 w-4 mr-1 text-primary" /> Unidades
-                        por blister
+                      <Label>
+                        <Layers className="inline h-4 w-4 mr-1 text-primary" /> Unidades/blister
                       </Label>
                       <Input
-                        id="edit-cantidad_unidades_blister"
                         type="number"
                         min="1"
                         value={editandoProducto.cantidad_unidades_blister}
                         onChange={(e) =>
-                          setEditandoProducto({
-                            ...editandoProducto,
-                            cantidad_unidades_blister: e.target.value,
-                          })
+                          setEditandoProducto({ ...editandoProducto, cantidad_unidades_blister: e.target.value })
                         }
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="edit-precio_venta_blister">
-                        <Box className="inline h-4 w-4 mr-1 text-primary" /> Precio
-                        venta blister
+                      <Label>
+                        <Box className="inline h-4 w-4 mr-1 text-primary" /> Precio blister
                       </Label>
                       <Input
-                        id="edit-precio_venta_blister"
                         type="number"
                         step="0.01"
                         value={editandoProducto.precio_venta_blister}
                         onChange={(e) =>
-                          setEditandoProducto({
-                            ...editandoProducto,
-                            precio_venta_blister: e.target.value,
-                          })
+                          setEditandoProducto({ ...editandoProducto, precio_venta_blister: e.target.value })
                         }
                       />
                     </div>
                   </div>
-                  {/* Lotes */}
                   <div className="space-y-2">
                     <Label>Lotes (stocks)</Label>
                     <div className="grid grid-cols-4 gap-4 mb-2">
@@ -1524,10 +1438,7 @@ export default function ProductosPage() {
                         className="col-span-2"
                         value={loteEnEdicion?.codigoStock ?? ""}
                         onChange={(e) =>
-                          setLoteEnEdicion((old) => ({
-                            ...old,
-                            codigoStock: e.target.value,
-                          } as StockLote))
+                          setLoteEnEdicion(old => ({ ...old, codigoStock: e.target.value } as StockLote))
                         }
                       />
                       <Input
@@ -1537,22 +1448,15 @@ export default function ProductosPage() {
                         value={loteEnEdicion?.cantidadUnidades ?? ""}
                         min={1}
                         onChange={(e) =>
-                          setLoteEnEdicion((old) => ({
-                            ...old,
-                            cantidadUnidades: Number(e.target.value),
-                          } as StockLote))
+                          setLoteEnEdicion(old => ({ ...old, cantidadUnidades: Number(e.target.value) } as StockLote))
                         }
                       />
                       <Input
                         type="date"
-                        placeholder="Vencimiento"
                         className="col-span-2"
                         value={loteEnEdicion?.fechaVencimiento ?? ""}
                         onChange={(e) =>
-                          setLoteEnEdicion((old) => ({
-                            ...old,
-                            fechaVencimiento: e.target.value,
-                          } as StockLote))
+                          setLoteEnEdicion(old => ({ ...old, fechaVencimiento: e.target.value } as StockLote))
                         }
                       />
                       <Input
@@ -1567,10 +1471,7 @@ export default function ProductosPage() {
                         }
                         min={0}
                         onChange={(e) =>
-                          setLoteEnEdicion((old) => ({
-                            ...old,
-                            precioCompra: Number(e.target.value),
-                          } as StockLote))
+                          setLoteEnEdicion(old => ({ ...old, precioCompra: Number(e.target.value) } as StockLote))
                         }
                       />
                     </div>
@@ -1586,7 +1487,6 @@ export default function ProductosPage() {
                       ) : (
                         <Button
                           type="button"
-                          
                           variant="destructive"
                           onClick={guardarLoteEditado}
                         >
@@ -1607,90 +1507,72 @@ export default function ProductosPage() {
                       )}
                     </div>
                     <div className="mt-2">
-                      {(!editandoProducto.stocks ||
-                        editandoProducto.stocks.length === 0) && (
-                        <div className="text-sm text-muted-foreground">
-                          Sin lotes
-                        </div>
+                      {(!editandoProducto.stocks || editandoProducto.stocks.length === 0) && (
+                        <div className="text-sm text-muted-foreground">Sin lotes</div>
                       )}
-                      {editandoProducto.stocks &&
-                        editandoProducto.stocks.length > 0 && (
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Código Lote</TableHead>
-                                <TableHead>Unidades</TableHead>
-                                <TableHead>Vencimiento</TableHead>
-                                <TableHead>Precio Compra</TableHead>
-                                <TableHead>Acción</TableHead>
+                      {editandoProducto.stocks && editandoProducto.stocks.length > 0 && (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Lote</TableHead>
+                              <TableHead>Unidades</TableHead>
+                              <TableHead>Vencimiento</TableHead>
+                              <TableHead>Precio Compra</TableHead>
+                              <TableHead />
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {editandoProducto.stocks.map((lote: StockLote, idx: number) => (
+                              <TableRow key={lote.codigoStock || `${lote.fechaVencimiento}-${idx}`}>
+                                <TableCell>{lote.codigoStock}</TableCell>
+                                <TableCell>{lote.cantidadUnidades}</TableCell>
+                                <TableCell>{lote.fechaVencimiento}</TableCell>
+                                <TableCell>S/ {Number(lote.precioCompra).toFixed(2)}</TableCell>
+                                <TableCell className="flex gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => editarLoteDeEdicion(idx)}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => eliminarLoteDeEdicion(idx)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </TableCell>
                               </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {editandoProducto.stocks.map(
-                                (lote: StockLote, idx: number) => (
-                                  <TableRow key={idx}>
-                                    <TableCell>{lote.codigoStock}</TableCell>
-                                    <TableCell>{lote.cantidadUnidades}</TableCell>
-                                    <TableCell>{lote.fechaVencimiento}</TableCell>
-                                    <TableCell>
-                                      S/ {Number(lote.precioCompra).toFixed(2)}
-                                    </TableCell>
-                                    <TableCell className="flex gap-2">
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => editarLoteDeEdicion(idx)}
-                                      >
-                                        <Edit className="h-4 w-4" />
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => eliminarLoteDeEdicion(idx)}
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                    </TableCell>
-                                  </TableRow>
-                                )
-                              )}
-                            </TableBody>
-                          </Table>
-                        )}
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="edit-precio_venta_und">
-                        Precio de venta *
-                      </Label>
+                      <Label>Precio de venta *</Label>
                       <Input
-                        id="edit-precio_venta_und"
                         type="number"
                         step="0.01"
                         value={editandoProducto.precio_venta_und}
                         onChange={(e) =>
-                          setEditandoProducto({
-                            ...editandoProducto,
-                            precio_venta_und: e.target.value,
-                          })
+                          setEditandoProducto({ ...editandoProducto, precio_venta_und: e.target.value })
                         }
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="edit-descuento">Precio con descuento</Label>
+                      <Label>Precio con descuento</Label>
                       <Input
-                        id="edit-descuento"
                         type="number"
                         step="0.01"
                         value={editandoProducto.descuento}
                         onChange={(e) =>
-                          setEditandoProducto({
-                            ...editandoProducto,
-                            descuento: e.target.value,
-                          })
+                          setEditandoProducto({ ...editandoProducto, descuento: e.target.value })
                         }
                       />
                     </div>
