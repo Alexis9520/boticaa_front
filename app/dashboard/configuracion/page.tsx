@@ -15,29 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { RoleGuard } from "@/components/RoleGuard"
 import { useToast } from "@/hooks/use-toast"
-import { buildTicketHTML } from "@/lib/print-utils"
-
-// Define VentaPreview type locally
-type VentaPreview = {
-  numero: string
-  fecha: string
-  cliente: string
-  dni: string
-  vendedor: string
-  items: {
-    nombre: string
-    cantidad: number
-    precio: number
-    subtotal: number
-  }[]
-  total: number
-  metodo: {
-    nombre: string
-    efectivo?: number
-    digital?: number
-    vuelto?: number
-  }
-}
+import { buildTicketHTML, VentaPreview } from "@/lib/print-utils"
 import { getBoletas } from "@/lib/api"
 
 type ConfGeneral = {

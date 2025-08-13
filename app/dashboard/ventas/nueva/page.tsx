@@ -1,7 +1,9 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
+import { ArrowLeft, Minus, Plus, Search, Trash2, X, Layers, Package, ChevronsUpDown, ArrowUpAZ, ArrowDownAZ } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -9,9 +11,8 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Separator } from "@/components/ui/separator"
-import { useToast } from "@/hooks/use-toast"
-import { ArrowLeft, Minus, Plus, Search, Trash2, X, Layers, Package } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { useToast } from "@/hooks/use-toast"
 import { apiUrl } from "@/components/config"
 import { buildTicketHTML, VentaPreview } from "@/lib/print-utils"
 
@@ -23,6 +24,11 @@ interface Producto {
   cantidadUnidadesBlister?: number
   cantidadGeneral: number
   descuento: number
+  // NUEVOS CAMPOS
+  concentracion?: string
+  laboratorio?: string
+  tipoMedicamento?: "GENÉRICO" | "MARCA" | string
+  presentacion?: string
 }
 
 interface ProductoCarrito {
@@ -43,9 +49,6 @@ interface UsuarioSesion {
   rol: string
 }
 
-/**
- * Helper fetch con token.
- */
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
   if (!token) {
@@ -80,8 +83,8 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
 function generarNumeroBoleta(serie = "B") {
   const now = new Date()
   const yyyy = now.getFullYear()
-  const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const dd = String(now.getDate()).padStart(2, '0')
+  const mm = String(now.getMonth() + 1).padStart(2, "0")
+  const dd = String(now.getDate()).padStart(2, "0")
   const rand = Math.floor(Math.random() * 90000) + 10000
   return `${serie}-${yyyy}${mm}${dd}-${rand}`
 }
@@ -98,10 +101,21 @@ function buildVentaPreviewFromState(params: {
   dniCliente: string
   nombreVendedor?: string
 }): VentaPreview {
-  const { numero, fecha, carrito, total, metodoPago, montoEfectivo, montoYape, nombreCliente, dniCliente, nombreVendedor } = params
+  const {
+    numero,
+    fecha,
+    carrito,
+    total,
+    metodoPago,
+    montoEfectivo,
+    montoYape,
+    nombreCliente,
+    dniCliente,
+    nombreVendedor,
+  } = params
   const items: VentaPreview["items"] = []
   carrito.forEach(p => {
-    const pu = Math.max(0, (p.precioVentaUnd - (p.descuento ?? 0)))
+    const pu = Math.max(0, p.precioVentaUnd - (p.descuento ?? 0))
     if (p.cantidadBlister > 0 && p.precioVentaBlister) {
       const nombre = p.cantidadUnidadesBlister
         ? `${p.nombre} [Blister x${p.cantidadUnidadesBlister}]`
@@ -127,9 +141,10 @@ function buildVentaPreviewFromState(params: {
   if (metodoPago === "yape") nombreMetodo = "YAPE"
   if (metodoPago === "mixto") nombreMetodo = "MIXTO"
 
-  const pagado = (metodoPago === "efectivo" ? montoEfectivo : 0) +
-                 (metodoPago === "yape" ? montoYape : 0) +
-                 (metodoPago === "mixto" ? (montoEfectivo + montoYape) : 0)
+  const pagado =
+    (metodoPago === "efectivo" ? montoEfectivo : 0) +
+    (metodoPago === "yape" ? montoYape : 0) +
+    (metodoPago === "mixto" ? montoEfectivo + montoYape : 0)
   const vuelto = Math.max(0, pagado - total)
 
   return {
@@ -142,30 +157,59 @@ function buildVentaPreviewFromState(params: {
     total,
     metodo: {
       nombre: nombreMetodo,
-      efectivo: metodoPago === "efectivo" || metodoPago === "mixto" ? (montoEfectivo || undefined) : undefined,
-      digital: metodoPago === "yape" || metodoPago === "mixto" ? (montoYape || undefined) : undefined,
+      efectivo:
+        metodoPago === "efectivo" || metodoPago === "mixto"
+          ? (montoEfectivo || undefined)
+          : undefined,
+      digital:
+        metodoPago === "yape" || metodoPago === "mixto"
+          ? (montoYape || undefined)
+          : undefined,
       vuelto: vuelto || undefined,
     },
   }
 }
 
+type SortField =
+  | "nombre"
+  | "precio"
+  | "stock"
+  | "laboratorio"
+  | "tipo"
+  | "concentracion"
+
 export default function NuevaVentaPage() {
+  const router = useRouter()
+  const { toast } = useToast()
+
+  // PRODUCTOS / BUSQUEDA
   const [busqueda, setBusqueda] = useState("")
   const [productos, setProductos] = useState<Producto[]>([])
-  const [resultados, setResultados] = useState<Producto[]>([])
+  const [mostrarResultados, setMostrarResultados] = useState(false)
+
+  // ORDENAMIENTO
+  const [sortField, setSortField] = useState<SortField>("nombre")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
+
+  // SELECCIÓN (para agregar al carrito)
+  const [blisterUnidadSeleccion, setBlisterUnidadSeleccion] = useState<Record<string, { blisters: number; unidades: number }>>({})
+
+  // CARRITO / PAGO
   const [carrito, setCarrito] = useState<ProductoCarrito[]>([])
   const [metodoPago, setMetodoPago] = useState<"efectivo" | "yape" | "mixto">("efectivo")
   const [montoEfectivo, setMontoEfectivo] = useState("")
   const [montoYape, setMontoYape] = useState("")
-  const [mostrarResultados, setMostrarResultados] = useState(false)
+
+  // CLIENTE / SESION
   const [dniCliente, setDniCliente] = useState("")
   const [nombreCliente, setNombreCliente] = useState("")
   const [usuarioSesion, setUsuarioSesion] = useState<UsuarioSesion | null>(null)
 
-  // Caja
-  const [cajaAbierta, setCajaAbierta] = useState<boolean | null>(null) // null = no verificado / cargando
+  // CAJA
+  const [cajaAbierta, setCajaAbierta] = useState<boolean | null>(null)
   const [cargandoCaja, setCargandoCaja] = useState(false)
 
+  // CONFIG
   const [configuracionGeneral] = useState(() => {
     if (typeof window !== "undefined") {
       const data = localStorage.getItem("configuracionGeneral")
@@ -214,81 +258,75 @@ export default function NuevaVentaPage() {
     }
   })
 
-  const { toast } = useToast()
-  const router = useRouter()
+  const checkCajaAbierta = useCallback(
+    async (showMessage = false): Promise<boolean> => {
+      if (!usuarioSesion?.dni) {
+        setCajaAbierta(false)
+        return false
+      }
+      try {
+        setCargandoCaja(true)
+        const url = apiUrl(`/api/cajas/actual?dniUsuario=${encodeURIComponent(usuarioSesion.dni)}`)
+        const resp = await fetchWithAuth(url)
 
-  // Verificar estado de caja para el usuario
-  const checkCajaAbierta = useCallback(async (showMessage = false): Promise<boolean> => {
-    if (!usuarioSesion?.dni) {
-      setCajaAbierta(false)
-      return false
-    }
-    try {
-      setCargandoCaja(true)
-      // Endpoint verdadero según tu controlador: /api/cajas/actual?dniUsuario=...
-      const url = apiUrl(`/api/cajas/actual?dniUsuario=${encodeURIComponent(usuarioSesion.dni)}`)
-      const resp = await fetchWithAuth(url)
-
-      if (!resp) {
-        // 204 o null => no hay caja abierta
+        if (!resp) {
+          setCajaAbierta(false)
+          if (showMessage) {
+            toast({
+              title: "No hay caja abierta",
+              description: "Debes abrir una caja antes de realizar la venta.",
+              variant: "destructive",
+            })
+          }
+          return false
+        }
+        const abierta =
+          (resp.estado && resp.estado.toUpperCase() === "ABIERTA") ||
+          (!resp.estado && !resp.fechaCierre)
+        setCajaAbierta(abierta)
+        if (showMessage && !abierta) {
+          toast({
+            title: "Caja no disponible",
+            description: "La caja actual está cerrada.",
+            variant: "destructive",
+          })
+        }
+        return abierta
+      } catch {
         setCajaAbierta(false)
         if (showMessage) {
           toast({
-            title: "No hay caja abierta",
-            description: "Debes abrir una caja antes de realizar la venta.",
+            title: "Error verificando caja",
+            description: "No se pudo consultar el estado de la caja.",
             variant: "destructive",
           })
         }
         return false
+      } finally {
+        setCargandoCaja(false)
       }
-
-      // Aquí adaptamos la condición a tu DTO.
-      // Suponiendo que CajaResumenDTO TAL VEZ tiene:
-      // - estado: "ABIERTA" | "CERRADA"
-      // - fechaCierre: null mientras está abierta
-      // Ajusta si tu implementación difiere.
-      const abierta =
-        (resp.estado && resp.estado.toUpperCase() === "ABIERTA") ||
-        (!resp.estado && !resp.fechaCierre)
-
-      setCajaAbierta(abierta)
-      if (showMessage && !abierta) {
-        toast({
-          title: "Caja no disponible",
-          description: "La caja actual está cerrada.",
-          variant: "destructive",
-        })
-      }
-      return abierta
-    } catch (err) {
-      setCajaAbierta(false)
-      if (showMessage) {
-        toast({
-          title: "Error verificando caja",
-          description: "No se pudo consultar el estado de la caja.",
-          variant: "destructive",
-        })
-      }
-      return false
-    } finally {
-      setCargandoCaja(false)
-    }
-  }, [usuarioSesion?.dni, toast])
+    },
+    [usuarioSesion?.dni, toast]
+  )
 
   // Cargar productos
   useEffect(() => {
     const fetchProductos = async () => {
       try {
         const data = await fetchWithAuth(apiUrl("/productos"))
-        setProductos(data)
+        setProductos(data || [])
       } catch {
-        toast({ title: "Error", description: "No se pudo cargar productos", variant: "destructive" })
+        toast({
+          title: "Error",
+            description: "No se pudo cargar productos",
+            variant: "destructive",
+        })
       }
     }
     fetchProductos()
   }, [toast])
 
-  // Cargar usuario y luego verificar caja
+  // Cargar usuario
   useEffect(() => {
     const usuarioStr = typeof window !== "undefined" ? localStorage.getItem("usuario") : null
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
@@ -300,29 +338,76 @@ export default function NuevaVentaPage() {
         setUsuarioSesion(null)
         localStorage.removeItem("usuario")
         localStorage.removeItem("token")
-        toast({ title: "Error", description: "No has iniciado sesión", variant: "destructive" })
+        toast({
+          title: "Error",
+          description: "No has iniciado sesión",
+          variant: "destructive",
+        })
         router.push("/login")
       }
     } else {
       setUsuarioSesion(null)
-      toast({ title: "Error", description: "No has iniciado sesión", variant: "destructive" })
+      toast({
+        title: "Error",
+        description: "No has iniciado sesión",
+        variant: "destructive",
+      })
       router.push("/login")
     }
   }, [toast, router])
 
-  // Llamar a checkCajaAbierta cuando ya tengamos usuarioSesion
+  // Verificar caja al tener usuario
   useEffect(() => {
-    if (usuarioSesion?.dni) {
-      checkCajaAbierta()
-    }
+    if (usuarioSesion?.dni) checkCajaAbierta()
   }, [usuarioSesion?.dni, checkCajaAbierta])
 
+  // FILTRAR + ORDENAR RESULTADOS
+  const resultados = useMemo(() => {
+    const q = busqueda.trim().toLowerCase()
+    let base = q
+      ? productos.filter(p =>
+          (p.nombre?.toLowerCase().includes(q)) ||
+          p.codigoBarras.toLowerCase().includes(q) ||
+          (p.laboratorio || "").toLowerCase().includes(q) ||
+          (p.concentracion || "").toLowerCase().includes(q) ||
+          (p.tipoMedicamento || "").toLowerCase().includes(q)
+        )
+      : []
+
+    // Ordenamiento
+    base.sort((a, b) => {
+      const mul = sortDir === "asc" ? 1 : -1
+      switch (sortField) {
+        case "nombre":
+          return a.nombre.localeCompare(b.nombre) * mul
+        case "precio": {
+          const pa = (a.precioVentaUnd - (a.descuento || 0))
+          const pb = (b.precioVentaUnd - (b.descuento || 0))
+          return (pa - pb) * mul
+        }
+        case "stock":
+          return (a.cantidadGeneral - b.cantidadGeneral) * mul
+        case "laboratorio":
+          return (a.laboratorio || "").localeCompare(b.laboratorio || "") * mul
+        case "tipo":
+          return (a.tipoMedicamento || "").localeCompare(b.tipoMedicamento || "") * mul
+        case "concentracion":
+          return (a.concentracion || "").localeCompare(b.concentracion || "") * mul
+        default:
+          return 0
+      }
+    })
+    return base
+  }, [productos, busqueda, sortField, sortDir])
+
   // Totales
-  const total = carrito.reduce((sum, item) =>
-    sum +
-    ((item.precioVentaBlister ?? 0) * item.cantidadBlister) +
-    ((item.precioVentaUnd - (item.descuento ?? 0)) * item.cantidadUnidad)
-  , 0)
+  const total = carrito.reduce(
+    (sum, item) =>
+      sum +
+      ((item.precioVentaBlister ?? 0) * item.cantidadBlister) +
+      ((item.precioVentaUnd - (item.descuento ?? 0)) * item.cantidadUnidad),
+    0
+  )
 
   let vuelto = 0
   let faltante = 0
@@ -334,7 +419,7 @@ export default function NuevaVentaPage() {
     const yape = Number.parseFloat(montoYape) || 0
     vuelto = yape > total ? yape - total : 0
     faltante = yape < total ? total - yape : 0
-  } else if (metodoPago === "mixto") {
+  } else {
     const efectivo = Number.parseFloat(montoEfectivo) || 0
     const yape = Number.parseFloat(montoYape) || 0
     const pagado = efectivo + yape
@@ -342,60 +427,67 @@ export default function NuevaVentaPage() {
     faltante = pagado < total ? total - pagado : 0
   }
 
-  const [blisterUnidadSeleccion, setBlisterUnidadSeleccion] = useState<{ [codigo: string]: { blisters: number, unidades: number } }>({})
-
-  const buscarProductos = () => {
-    if (busqueda.trim() === "") {
-      setResultados([])
-      setMostrarResultados(false)
-      return
-    }
-    const filtrados = productos.filter(
-      (p) =>
-        p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-        p.codigoBarras.toLowerCase().includes(busqueda.toLowerCase()),
-    )
-    setResultados(filtrados)
-    setMostrarResultados(true)
-    if (filtrados.length === 0) {
-      toast({ title: "Sin resultados", description: "No se encontraron productos", variant: "destructive" })
+  // Handlers
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(d => (d === "asc" ? "desc" : "asc"))
+    } else {
+      setSortField(field)
+      setSortDir("asc")
     }
   }
 
   const agregarAlCarrito = (producto: Producto) => {
-    const seleccion = blisterUnidadSeleccion[producto.codigoBarras] || { blisters: 0, unidades: 0 }
-    const cantidadTotal = (producto.cantidadUnidadesBlister ?? 0) * seleccion.blisters + seleccion.unidades
+    const sel = blisterUnidadSeleccion[producto.codigoBarras] || { blisters: 0, unidades: 0 }
+    const unidadesPorBlister = producto.cantidadUnidadesBlister || 0
+    const cantidadTotal = unidadesPorBlister * sel.blisters + sel.unidades
+
     if (cantidadTotal <= 0) {
-      toast({ title: "Cantidad inválida", description: "Agrega al menos 1 unidad o blister", variant: "destructive" })
+      toast({
+        title: "Cantidad inválida",
+        description: "Agrega al menos 1 unidad o blister",
+        variant: "destructive",
+      })
       return
     }
     if (cantidadTotal > producto.cantidadGeneral) {
-      toast({ title: "Stock insuficiente", description: `Stock insuficiente: máximo ${producto.cantidadGeneral} unidades`, variant: "destructive" })
+      toast({
+        title: "Stock insuficiente",
+        description: `Stock insuficiente: máximo ${producto.cantidadGeneral} unidades`,
+        variant: "destructive",
+      })
       return
     }
+
     setCarrito(prev => {
-      const existente = prev.find(item => item.codigoBarras === producto.codigoBarras)
-      if (existente) {
-        const nuevoBlisters = existente.cantidadBlister + seleccion.blisters
-        const nuevoUnidades = existente.cantidadUnidad + seleccion.unidades
-        const nuevoTotal = (producto.cantidadUnidadesBlister ?? 0) * nuevoBlisters + nuevoUnidades
-        if (nuevoTotal > producto.cantidadGeneral) {
-          toast({ title: "Stock insuficiente", description: `Stock insuficiente: máximo ${producto.cantidadGeneral} unidades`, variant: "destructive" })
+      const existing = prev.find(p => p.codigoBarras === producto.codigoBarras)
+      const precioBlister = producto.precioVentaBlister ?? 0
+      const precioUnidadFinal = producto.precioVentaUnd - (producto.descuento ?? 0)
+
+      if (existing) {
+        const newB = existing.cantidadBlister + sel.blisters
+        const newU = existing.cantidadUnidad + sel.unidades
+        const nuevoTotalUnidades = unidadesPorBlister * newB + newU
+        if (nuevoTotalUnidades > producto.cantidadGeneral) {
+          toast({
+            title: "Stock insuficiente",
+            description: `Stock insuficiente: máximo ${producto.cantidadGeneral} unidades`,
+            variant: "destructive",
+          })
           return prev
         }
-        return prev.map(item =>
-          item.codigoBarras === producto.codigoBarras
+        return prev.map(p =>
+          p.codigoBarras === existing.codigoBarras
             ? {
-                ...item,
-                cantidadBlister: nuevoBlisters,
-                cantidadUnidad: nuevoUnidades,
-                subtotal:
-                  (producto.precioVentaBlister ?? 0) * nuevoBlisters +
-                  (producto.precioVentaUnd - (producto.descuento ?? 0)) * nuevoUnidades,
+                ...p,
+                cantidadBlister: newB,
+                cantidadUnidad: newU,
+                subtotal: precioBlister * newB + precioUnidadFinal * newU,
               }
-            : item
+            : p
         )
       }
+
       return [
         ...prev,
         {
@@ -403,120 +495,144 @@ export default function NuevaVentaPage() {
           nombre: producto.nombre,
           precioVentaUnd: producto.precioVentaUnd,
           precioVentaBlister: producto.precioVentaBlister,
-          cantidadUnidadesBlister: producto.cantidadUnidadesBlister,
+            cantidadUnidadesBlister: producto.cantidadUnidadesBlister,
           descuento: producto.descuento,
-          cantidadBlister: seleccion.blisters,
-          cantidadUnidad: seleccion.unidades,
-          subtotal:
-            (producto.precioVentaBlister ?? 0) * seleccion.blisters +
-            (producto.precioVentaUnd - (producto.descuento ?? 0)) * seleccion.unidades,
+          cantidadBlister: sel.blisters,
+          cantidadUnidad: sel.unidades,
+          subtotal: precioBlister * sel.blisters + precioUnidadFinal * sel.unidades,
         },
       ]
     })
   }
 
-  const cambiarCantidadCarrito = (codigoBarras: string, tipo: "blister" | "unidad", incremento: number) => {
-    setCarrito(prev => {
-      return prev.map(item => {
-        if (item.codigoBarras !== codigoBarras) return item
-        const producto = productos.find(p => p.codigoBarras === codigoBarras)
-        if (!producto) return item
-        let nuevaBlisters = item.cantidadBlister
-        let nuevaUnidades = item.cantidadUnidad
-        if (tipo === "blister") {
-          nuevaBlisters = Math.max(0, item.cantidadBlister + incremento)
-        } else {
-          nuevaUnidades = Math.max(0, item.cantidadUnidad + incremento)
-        }
-        const totalTemp = (producto.cantidadUnidadesBlister ?? 0) * nuevaBlisters + nuevaUnidades
-        if (totalTemp > producto.cantidadGeneral) {
-          toast({ title: "Stock insuficiente", description: `Stock insuficiente: máximo ${producto.cantidadGeneral} unidades`, variant: "destructive" })
-          return item
-        }
-        return {
-          ...item,
-          cantidadBlister: nuevaBlisters,
-          cantidadUnidad: nuevaUnidades,
-          subtotal:
-            (producto.precioVentaBlister ?? 0) * nuevaBlisters +
-            (producto.precioVentaUnd - (producto.descuento ?? 0)) * nuevaUnidades,
-        }
-      }).filter(i => i.cantidadBlister > 0 || i.cantidadUnidad > 0)
-    })
+  const cambiarCantidadCarrito = (codigoBarras: string, tipo: "blister" | "unidad", delta: number) => {
+    setCarrito(prev =>
+      prev
+        .map(item => {
+          if (item.codigoBarras !== codigoBarras) return item
+          const producto = productos.find(p => p.codigoBarras === codigoBarras)
+          if (!producto) return item
+          let nb = item.cantidadBlister
+          let nu = item.cantidadUnidad
+          if (tipo === "blister") nb = Math.max(0, nb + delta)
+          else nu = Math.max(0, nu + delta)
+
+          const unidadesPorBlister = item.cantidadUnidadesBlister || 0
+          const totalTemp = unidadesPorBlister * nb + nu
+          if (totalTemp > producto.cantidadGeneral) {
+            toast({
+              title: "Stock insuficiente",
+              description: `Stock insuficiente: máximo ${producto.cantidadGeneral} unidades`,
+              variant: "destructive",
+            })
+            return item
+          }
+          const precioBlister = item.precioVentaBlister ?? 0
+          const precioUnidadFinal = item.precioVentaUnd - (item.descuento ?? 0)
+          return {
+            ...item,
+            cantidadBlister: nb,
+            cantidadUnidad: nu,
+            subtotal: precioBlister * nb + precioUnidadFinal * nu,
+          }
+        })
+        .filter(i => i.cantidadBlister > 0 || i.cantidadUnidad > 0)
+    )
   }
 
   const eliminarDelCarrito = (codigoBarras: string) => {
-    const eliminado = carrito.find((item) => item.codigoBarras === codigoBarras)
-    setCarrito((prev) => prev.filter((item) => item.codigoBarras !== codigoBarras))
+    const eliminado = carrito.find(c => c.codigoBarras === codigoBarras)
+    setCarrito(prev => prev.filter(c => c.codigoBarras !== codigoBarras))
     if (eliminado) {
       toast({
         title: "Producto eliminado",
-        description: `Se eliminó "${eliminado.nombre}" del carrito`,
-        variant: "default",
+        description: `"${eliminado.nombre}" fue removido del carrito`,
       })
     }
   }
 
   const procesarVenta = async () => {
     if (carrito.length === 0) {
-      toast({ title: "Carrito vacío", description: "Agrega productos al carrito", variant: "destructive" })
+      toast({
+        title: "Carrito vacío",
+        description: "Agrega productos",
+        variant: "destructive",
+      })
       return
     }
-
-    // Revalidar caja
     const abierta = await checkCajaAbierta(true)
     if (!abierta) return
 
     // Validaciones de pago
     if (metodoPago === "efectivo") {
-      const efectivo = Number.parseFloat(montoEfectivo) || 0
+      const efectivo = Number(montoEfectivo) || 0
       if (efectivo < total) {
-        toast({ title: "Monto insuficiente", description: "El efectivo debe cubrir el total", variant: "destructive" })
+        toast({
+          title: "Monto insuficiente",
+          description: "El efectivo no cubre el total",
+          variant: "destructive",
+        })
         return
       }
     } else if (metodoPago === "yape") {
-      const yape = Number.parseFloat(montoYape) || 0
+      const yape = Number(montoYape) || 0
       if (yape < total) {
-        toast({ title: "Monto insuficiente", description: "El monto Yape debe cubrir el total", variant: "destructive" })
+        toast({
+          title: "Monto insuficiente",
+          description: "El monto Yape no cubre el total",
+          variant: "destructive",
+        })
         return
       }
-    } else if (metodoPago === "mixto") {
-      const efectivo = Number.parseFloat(montoEfectivo) || 0
-      const yape = Number.parseFloat(montoYape) || 0
-      if (efectivo <= 0 || yape <= 0) {
-        toast({ title: "Montos inválidos", description: "Ambos montos deben ser > 0", variant: "destructive" })
+    } else {
+      const ef = Number(montoEfectivo) || 0
+      const yp = Number(montoYape) || 0
+      if (ef <= 0 || yp <= 0) {
+        toast({
+          title: "Montos inválidos",
+          description: "Ambos montos deben ser > 0",
+          variant: "destructive",
+        })
         return
       }
-      if (efectivo + yape < total) {
-        toast({ title: "Montos insuficientes", description: "La suma debe cubrir el total", variant: "destructive" })
+      if (ef + yp < total) {
+        toast({
+          title: "Suma insuficiente",
+          description: "La suma no cubre el total",
+          variant: "destructive",
+        })
         return
       }
     }
 
     if (!nombreCliente || !usuarioSesion?.nombreCompleto) {
-      toast({ title: "Faltan datos", description: "Completa los datos del cliente", variant: "destructive" })
+      toast({
+        title: "Faltan datos",
+        description: "Completa los datos del cliente",
+        variant: "destructive",
+      })
       return
     }
 
-    const dniClienteEnviar = dniCliente.trim()
     const numeroBoleta = generarNumeroBoleta(configuracionBoleta.serieBoleta)
-
     const ventaDTO = {
       numero: numeroBoleta,
-      dniCliente: dniClienteEnviar || "",
+      dniCliente: dniCliente.trim() || "",
       nombreCliente,
       dniVendedor: usuarioSesion?.dni || "",
       productos: carrito.map(item => ({
         codBarras: item.codigoBarras,
         cantidad:
           (item.cantidadUnidadesBlister ?? 0) * item.cantidadBlister +
-          item.cantidadUnidad
+          item.cantidadUnidad,
       })),
       metodoPago: {
         nombre: metodoPago.toUpperCase(),
-        efectivo: (metodoPago === "efectivo" || metodoPago === "mixto") ? Number(montoEfectivo) : 0,
-        digital: (metodoPago === "yape" || metodoPago === "mixto") ? Number(montoYape) : 0,
-      }
+        efectivo:
+          metodoPago === "efectivo" || metodoPago === "mixto" ? Number(montoEfectivo) : 0,
+        digital:
+          metodoPago === "yape" || metodoPago === "mixto" ? Number(montoYape) : 0,
+      },
     }
 
     try {
@@ -524,10 +640,8 @@ export default function NuevaVentaPage() {
         method: "POST",
         body: JSON.stringify(ventaDTO),
       })
+      toast({ title: "Venta realizada", description: "Venta registrada correctamente" })
 
-      toast({ title: "Venta realizada", description: "Venta registrada correctamente", variant: "default" })
-
-      // Generar e imprimir
       const ventaPreview: VentaPreview = buildVentaPreviewFromState({
         numero: numeroBoleta,
         fecha: new Date().toLocaleString(),
@@ -537,7 +651,7 @@ export default function NuevaVentaPage() {
         montoEfectivo: Number(montoEfectivo) || 0,
         montoYape: Number(montoYape) || 0,
         nombreCliente,
-        dniCliente: dniClienteEnviar,
+        dniCliente: dniCliente.trim(),
         nombreVendedor: usuarioSesion?.nombreCompleto,
       })
 
@@ -562,24 +676,27 @@ export default function NuevaVentaPage() {
       if (!previewWin) {
         toast({
           title: "Pop-up bloqueado",
-          description: "Permite ventanas emergentes para ver/ imprimir el ticket.",
+          description: "Permite ventanas emergentes para imprimir.",
           variant: "destructive",
         })
       }
-
       try {
-        localStorage.setItem("ticket_preview_job", JSON.stringify({
-          html,
-          formato: configuracionBoleta.formatoImpresion,
-          auto: !!configuracionBoleta.imprimirAutomatico,
-        }))
+        localStorage.setItem(
+          "ticket_preview_job",
+          JSON.stringify({
+            html,
+            formato: configuracionBoleta.formatoImpresion,
+            auto: !!configuracionBoleta.imprimirAutomatico,
+          })
+        )
       } catch {}
 
-      // Refrescar productos y limpiar
+      // Refrescar productos
       try {
         const productosRes = await fetchWithAuth(apiUrl("/productos"))
-        setProductos(productosRes)
+        setProductos(productosRes || [])
       } catch {}
+      // Reset
       setCarrito([])
       setMontoEfectivo("")
       setMontoYape("")
@@ -587,10 +704,15 @@ export default function NuevaVentaPage() {
       setDniCliente("")
       setNombreCliente("")
     } catch (e: any) {
-      const msg = typeof e === "string" ? e : (e?.message || "No se pudo registrar la venta")
+      const msg =
+        typeof e === "string" ? e : e?.message || "No se pudo registrar la venta"
       if (msg.includes("No hay una caja abierta")) {
         setCajaAbierta(false)
-        toast({ title: "Caja cerrada", description: "Abre una caja antes de vender.", variant: "destructive" })
+        toast({
+          title: "Caja cerrada",
+          description: "Abre una caja antes de vender.",
+          variant: "destructive",
+        })
       } else {
         toast({ title: "Error", description: msg, variant: "destructive" })
       }
@@ -599,41 +721,71 @@ export default function NuevaVentaPage() {
 
   const procesarVentaDisabled = carrito.length === 0 || !cajaAbierta || cargandoCaja
 
+  // UI Helpers
+  function SortButton({ field, children }: { field: SortField; children: React.ReactNode }) {
+    const active = sortField === field
+    const dirIcon =
+      active && sortDir === "asc" ? (
+        <ArrowUpAZ className="h-3 w-3" />
+      ) : active && sortDir === "desc" ? (
+        <ArrowDownAZ className="h-3 w-3" />
+      ) : (
+        <ChevronsUpDown className="h-3 w-3 opacity-60" />
+      )
+    return (
+      <button
+        type="button"
+        onClick={() => toggleSort(field)}
+        className={`inline-flex items-center gap-1 text-xs font-medium transition ${
+          active ? "text-primary" : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        {children}
+        {dirIcon}
+      </button>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => router.back()}>
+            <Button variant="outline" size="icon" onClick={() => router.back()}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <h1 className="text-2xl font-bold tracking-tight">Nueva Venta</h1>
         </div>
-        {cajaAbierta === null && <Badge variant="outline">Verificando caja...</Badge>}
-        {cajaAbierta === false && <Badge variant="destructive">No hay caja abierta</Badge>}
-        {cajaAbierta === true && <Badge variant="default">Caja abierta</Badge>}
+        <div>
+          {cajaAbierta === null && <Badge variant="outline">Verificando caja...</Badge>}
+          {cajaAbierta === false && <Badge variant="destructive">No hay caja abierta</Badge>}
+          {cajaAbierta === true && <Badge>Caja abierta</Badge>}
+        </div>
       </div>
 
-      {/* Datos cliente */}
-      <Card className="mb-2">
-        <CardHeader>
+      {/* Cliente */}
+      <Card>
+        <CardHeader className="pb-3">
           <CardTitle>Datos del Cliente</CardTitle>
-          <CardDescription>El DNI no es obligatorio</CardDescription>
+          <CardDescription>El DNI es opcional</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid gap-4 md:grid-cols-3">
             <div>
-              <Label className="font-medium" htmlFor="dni-cliente">DNI Cliente</Label>
+              <Label htmlFor="dni-cliente">DNI Cliente</Label>
               <Input
                 id="dni-cliente"
                 value={dniCliente}
-                onChange={e => setDniCliente(e.target.value.replace(/[^0-9]/g, ""))}
+                onChange={e =>
+                  setDniCliente(e.target.value.replace(/[^0-9]/g, ""))
+                }
                 maxLength={8}
-                placeholder="Opcional: 8 dígitos"
+                placeholder="Opcional"
                 inputMode="numeric"
               />
             </div>
             <div>
-              <Label className="font-medium" htmlFor="nombre-cliente">
+              <Label htmlFor="nombre-cliente">
                 Nombre Cliente <span className="text-rose-600">*</span>
               </Label>
               <Input
@@ -645,7 +797,7 @@ export default function NuevaVentaPage() {
               />
             </div>
             <div>
-              <Label className="font-medium" htmlFor="vendedor">Vendedor</Label>
+              <Label htmlFor="vendedor">Vendedor</Label>
               <Input
                 id="vendedor"
                 value={usuarioSesion?.nombreCompleto || ""}
@@ -658,12 +810,15 @@ export default function NuevaVentaPage() {
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-3">
+        {/* Columna izquierda (2/3) */}
         <div className="lg:col-span-2 space-y-6">
           {/* Buscar Productos */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle>Buscar Productos</CardTitle>
-              <CardDescription>Busca productos por nombre o código de barras</CardDescription>
+              <CardDescription>
+                Busca por nombre, código, laboratorio, concentración o tipo
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex gap-2">
@@ -671,176 +826,288 @@ export default function NuevaVentaPage() {
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
                     type="search"
-                    placeholder="Buscar por nombre o código..."
+                    placeholder="Buscar..."
                     className="pl-8"
                     value={busqueda}
-                    onChange={(e) => {
+                    onChange={e => {
                       setBusqueda(e.target.value)
-                      const valor = e.target.value
-                      if (valor.trim() === "") {
-                        setResultados([])
+                      if (e.target.value.trim() === "") {
                         setMostrarResultados(false)
-                        return
+                      } else {
+                        setMostrarResultados(true)
                       }
-                      const filtrados = productos.filter(
-                        (p) =>
-                          p.nombre.toLowerCase().includes(valor.toLowerCase()) ||
-                          p.codigoBarras.toLowerCase().includes(valor.toLowerCase()),
-                      )
-                      setResultados(filtrados)
-                      setMostrarResultados(true)
                     }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        buscarProductos()
+                    onKeyDown={e => {
+                      if (e.key === "Escape") {
+                        setBusqueda("")
+                        setMostrarResultados(false)
                       }
                     }}
                   />
                 </div>
-                <Button onClick={buscarProductos}>Buscar</Button>
-                
+                <Button
+                  variant={mostrarResultados ? "secondary" : "default"}
+                  onClick={() => {
+                    if (busqueda.trim() === "") {
+                      toast({
+                        title: "Ingresa un término",
+                        variant: "destructive",
+                      })
+                      return
+                    }
+                    setMostrarResultados(true)
+                  }}
+                >
+                  Buscar
+                </Button>
               </div>
 
               {mostrarResultados && (
                 <div className="mt-4">
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-medium">Resultados de búsqueda</h3>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        setMostrarResultados(false)
-                        setResultados([])
-                        setBusqueda("")
-                      }}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
+                    <h3 className="font-medium text-sm">
+                      Resultados ({resultados.length})
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <div className="hidden sm:flex items-center gap-3 pr-2 border-r">
+                        <SortButton field="nombre">Nombre</SortButton>
+                        <SortButton field="precio">Precio</SortButton>
+                        <SortButton field="stock">Stock</SortButton>
+                        <SortButton field="laboratorio">Lab</SortButton>
+                        <SortButton field="tipo">Tipo</SortButton>
+                        <SortButton field="concentracion">Concentración</SortButton>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setMostrarResultados(false)
+                          setBusqueda("")
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="border rounded-md max-h-72 overflow-y-auto">
+                  <div className="border rounded-md max-h-80 overflow-auto">
                     <Table>
                       <TableHeader>
-                        <TableRow>
-                          <TableHead>Código</TableHead>
-                          <TableHead>Producto</TableHead>
-                          <TableHead>Presentación</TableHead>
-                          <TableHead>Precio</TableHead>
-                          <TableHead>Stock</TableHead>
-                          <TableHead className="text-center">Venta</TableHead>
-                          <TableHead className="text-right">Acción</TableHead>
+                        <TableRow className="text-xs">
+                          <TableHead className="min-w-[110px]">
+                            <SortButton field="nombre">Producto</SortButton>
+                          </TableHead>
+                          <TableHead className="w-[110px]">
+                            <SortButton field="concentracion">Concent.</SortButton>
+                          </TableHead>
+                          <TableHead className="w-[120px]">
+                            <SortButton field="laboratorio">Laboratorio</SortButton>
+                          </TableHead>
+                          <TableHead className="w-[90px]">
+                            <SortButton field="tipo">Tipo</SortButton>
+                          </TableHead>
+                          <TableHead className="w-[110px]">Presentación</TableHead>
+                          <TableHead className="w-[130px]">
+                            <SortButton field="precio">Precio</SortButton>
+                          </TableHead>
+                          <TableHead className="w-[90px]">
+                            <SortButton field="stock">Stock</SortButton>
+                          </TableHead>
+                          <TableHead className="w-[150px] text-center">
+                            Venta
+                          </TableHead>
+                          <TableHead className="text-right w-[100px]">
+                            Acción
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {resultados.map((producto) => {
-                          const precioFinal = producto.precioVentaUnd - (producto.descuento ?? 0)
-                          const descuentoPorcentaje =
-                            producto.precioVentaUnd > 0
-                              ? ((producto.descuento / producto.precioVentaUnd) * 100)
+                        {resultados.length === 0 && (
+                          <TableRow>
+                            <TableCell
+                              colSpan={9}
+                              className="text-center text-sm text-muted-foreground py-6"
+                            >
+                              No hay resultados
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        {resultados.map(prod => {
+                          const precioUnidadFinal =
+                            prod.precioVentaUnd - (prod.descuento ?? 0)
+                          const descuentoPct =
+                            prod.precioVentaUnd > 0 && prod.descuento > 0
+                              ? (prod.descuento / prod.precioVentaUnd) * 100
                               : 0
-                          const sel = blisterUnidadSeleccion[producto.codigoBarras] || { blisters: 0, unidades: 0 }
+                          const sel =
+                            blisterUnidadSeleccion[prod.codigoBarras] || {
+                              blisters: 0,
+                              unidades: 0,
+                            }
+                          const tipoBadgeVariant =
+                            prod.tipoMedicamento === "MARCA"
+                              ? "destructive"
+                              : "outline"
                           return (
-                            <TableRow key={producto.codigoBarras}>
-                              <TableCell className="font-medium">{producto.codigoBarras}</TableCell>
-                              <TableCell>{producto.nombre}</TableCell>
-                              <TableCell>
-                                {producto.cantidadUnidadesBlister && producto.precioVentaBlister ? (
-                                  <span>
-                                    <Badge variant="outline" className="flex items-center gap-1 mb-1">
-                                      <Layers className="w-3 h-3 mr-1 text-primary" />
-                                      Blister: {producto.cantidadUnidadesBlister}u
-                                    </Badge>
-                                    <br />
-                                    <Badge variant="outline" className="flex items-center gap-1">
-                                      <Package className="w-3 h-3 mr-1" />
-                                      Suelto
-                                    </Badge>
+                            <TableRow key={prod.codigoBarras} className="text-[13px]">
+                              <TableCell className="align-top">
+                                <div className="font-medium leading-tight">
+                                  {prod.nombre}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  {prod.codigoBarras}
+                                </div>
+                              </TableCell>
+                              <TableCell className="align-top">
+                                <span className="text-xs">
+                                  {prod.concentracion || "—"}
+                                </span>
+                              </TableCell>
+                              <TableCell className="align-top">
+                                <span className="text-xs">
+                                  {prod.laboratorio || "—"}
+                                </span>
+                              </TableCell>
+                              <TableCell className="align-top">
+                                <Badge
+                                  variant={tipoBadgeVariant}
+                                  className="px-1.5 py-0 text-[10px]"
+                                >
+                                  {prod.tipoMedicamento || "—"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="align-top">
+                                {prod.presentacion ? (
+                                  <span className="text-xs line-clamp-2">
+                                    {prod.presentacion}
                                   </span>
                                 ) : (
-                                  <Badge variant="outline" className="flex items-center gap-1">
-                                    <Package className="w-3 h-3 mr-1" />
-                                    Suelto
-                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    —
+                                  </span>
                                 )}
                               </TableCell>
-                              <TableCell>
-                                <div>
-                                  {producto.cantidadUnidadesBlister && producto.precioVentaBlister ? (
-                                    <div>
-                                      <span className="mr-1 font-semibold text-primary">
-                                        S/ {producto.precioVentaBlister.toFixed(2)}
+                              <TableCell className="align-top">
+                                <div className="flex flex-col gap-0.5">
+                                  {prod.precioVentaBlister &&
+                                  prod.cantidadUnidadesBlister ? (
+                                    <div className="text-xs">
+                                      <span className="font-semibold text-primary">
+                                        S/ {prod.precioVentaBlister.toFixed(2)}
+                                      </span>{" "}
+                                      <span className="text-muted-foreground">
+                                        / blister
                                       </span>
-                                      <span className="text-xs text-muted-foreground">/ blister</span>
-                                      <br />
-                                      <span className="font-semibold text-emerald-600">
-                                        S/ {precioFinal.toFixed(2)}
-                                      </span>
-                                      <span className="text-xs text-muted-foreground">/ unidad</span>
                                     </div>
-                                  ) : (
-                                    <span>
-                                      <span className="font-semibold text-emerald-600">
-                                        S/ {precioFinal.toFixed(2)}
+                                  ) : null}
+                                  <div className="text-xs flex flex-col">
+                                    {descuentoPct > 0 && (
+                                      <span className="line-through text-[10px] text-muted-foreground">
+                                        S/ {prod.precioVentaUnd.toFixed(2)}
                                       </span>
-                                      <span className="text-xs text-muted-foreground">/ unidad</span>
+                                    )}
+                                    <span
+                                      className={
+                                        descuentoPct > 0
+                                          ? "font-semibold text-emerald-600"
+                                          : "font-semibold"
+                                      }
+                                    >
+                                      S/ {precioUnidadFinal.toFixed(2)}
+                                      <span className="text-muted-foreground">
+                                        {" "}
+                                        / und
+                                      </span>
                                     </span>
-                                  )}
-                                  {(producto.descuento ?? 0) > 0 && (
+                                  </div>
+                                  {descuentoPct > 0 && (
                                     <Badge
                                       variant="outline"
-                                      className="bg-yellow-100 text-yellow-800 border-yellow-300 ml-2"
+                                      className="bg-yellow-100 text-yellow-800 border-yellow-300 w-fit px-1 py-0 text-[10px]"
                                     >
-                                      -{descuentoPorcentaje.toFixed(2)}%
+                                      -{descuentoPct.toFixed(1)}%
                                     </Badge>
                                   )}
                                 </div>
                               </TableCell>
-                              <TableCell>
-                                <Badge variant={producto.cantidadGeneral > 10 ? "default" : "destructive"}>
-                                  {producto.cantidadGeneral} unidades
+                              <TableCell className="align-top">
+                                <Badge
+                                  variant={
+                                    prod.cantidadGeneral <= 0
+                                      ? "destructive"
+                                      : prod.cantidadGeneral <= 10
+                                      ? "secondary"
+                                      : "default"
+                                  }
+                                  className="px-1.5 py-0 text-[10px]"
+                                >
+                                  {prod.cantidadGeneral} u
                                 </Badge>
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="align-top">
                                 <div className="flex flex-col gap-1">
-                                  {producto.cantidadUnidadesBlister && producto.precioVentaBlister ? (
+                                  {prod.cantidadUnidadesBlister &&
+                                  prod.precioVentaBlister ? (
                                     <div className="flex flex-col gap-1">
                                       <div className="flex items-center gap-1">
-                                        <span className="text-xs">Blisters</span>
+                                        <span className="text-[10px]">
+                                          Blisters
+                                        </span>
                                         <Input
                                           type="number"
                                           min={0}
-                                          max={Math.floor(producto.cantidadGeneral / (producto.cantidadUnidadesBlister || 1))}
-                                          className="w-16 h-8"
+                                          max={Math.floor(
+                                            prod.cantidadGeneral /
+                                              (prod.cantidadUnidadesBlister || 1)
+                                          )}
+                                          className="w-16 h-7 text-xs"
                                           value={sel.blisters || ""}
                                           onChange={e => {
-                                            const v = Math.max(0, Number(e.target.value))
+                                            const v = Math.max(
+                                              0,
+                                              Number(e.target.value)
+                                            )
                                             setBlisterUnidadSeleccion(prev => ({
                                               ...prev,
-                                              [producto.codigoBarras]: {
+                                              [prod.codigoBarras]: {
                                                 blisters: v,
-                                                unidades: prev[producto.codigoBarras]?.unidades ?? 0,
-                                              }
+                                                unidades:
+                                                  prev[prod.codigoBarras]
+                                                    ?.unidades ?? 0,
+                                              },
                                             }))
                                           }}
                                         />
                                       </div>
                                       <div className="flex items-center gap-1">
-                                        <span className="text-xs">Unidades</span>
+                                        <span className="text-[10px]">
+                                          Unidades
+                                        </span>
                                         <Input
                                           type="number"
                                           min={0}
-                                          max={(producto.cantidadUnidadesBlister || 1) - 1}
-                                          className="w-16 h-8"
+                                          max={
+                                            (prod.cantidadUnidadesBlister || 1) -
+                                            1
+                                          }
+                                          className="w-16 h-7 text-xs"
                                           value={sel.unidades || ""}
                                           onChange={e => {
-                                            let v = Math.max(0, Number(e.target.value))
-                                            const maxU = (producto.cantidadUnidadesBlister || 1) - 1
+                                            let v = Math.max(
+                                              0,
+                                              Number(e.target.value)
+                                            )
+                                            const maxU =
+                                              (prod.cantidadUnidadesBlister ||
+                                                1) - 1
                                             if (v > maxU) v = maxU
                                             setBlisterUnidadSeleccion(prev => ({
                                               ...prev,
-                                              [producto.codigoBarras]: {
-                                                blisters: prev[producto.codigoBarras]?.blisters ?? 0,
+                                              [prod.codigoBarras]: {
+                                                blisters:
+                                                  prev[prod.codigoBarras]
+                                                    ?.blisters ?? 0,
                                                 unidades: v,
-                                              }
+                                              },
                                             }))
                                           }}
                                         />
@@ -848,21 +1115,26 @@ export default function NuevaVentaPage() {
                                     </div>
                                   ) : (
                                     <div className="flex items-center gap-1">
-                                      <span className="text-xs">Unidades</span>
+                                      <span className="text-[10px]">
+                                        Unidades
+                                      </span>
                                       <Input
                                         type="number"
                                         min={0}
-                                        max={producto.cantidadGeneral}
-                                        className="w-16 h-8"
+                                        max={prod.cantidadGeneral}
+                                        className="w-20 h-7 text-xs"
                                         value={sel.unidades || ""}
                                         onChange={e => {
-                                          const v = Math.max(0, Number(e.target.value))
+                                          const v = Math.max(
+                                            0,
+                                            Number(e.target.value)
+                                          )
                                           setBlisterUnidadSeleccion(prev => ({
                                             ...prev,
-                                            [producto.codigoBarras]: {
+                                            [prod.codigoBarras]: {
                                               blisters: 0,
                                               unidades: v,
-                                            }
+                                            },
                                           }))
                                         }}
                                       />
@@ -870,12 +1142,12 @@ export default function NuevaVentaPage() {
                                   )}
                                 </div>
                               </TableCell>
-                              <TableCell className="text-right">
+                              <TableCell className="align-top text-right">
                                 <Button
                                   size="sm"
-                                  onClick={() => agregarAlCarrito(producto)}
-                                  // Si quieres bloquear agregar al carrito sin caja: habilita el siguiente disabled
-                                  disabled={producto.cantidadGeneral === 0 /* || !cajaAbierta */}
+                                  className="text-xs"
+                                  onClick={() => agregarAlCarrito(prod)}
+                                  disabled={prod.cantidadGeneral === 0}
                                 >
                                   <Plus className="h-4 w-4 mr-1" />
                                   Agregar
@@ -895,17 +1167,19 @@ export default function NuevaVentaPage() {
           {/* Carrito */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle>Carrito de Compras</CardTitle>
-              <CardDescription>Productos seleccionados para la venta</CardDescription>
+              <CardTitle>Carrito de Venta</CardTitle>
+              <CardDescription>Productos que serán incluidos</CardDescription>
             </CardHeader>
             <CardContent>
               {carrito.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">No hay productos en el carrito</div>
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  No hay productos en el carrito
+                </div>
               ) : (
-                <div className="border rounded-md">
+                <div className="border rounded-md overflow-x-auto">
                   <Table>
                     <TableHeader>
-                      <TableRow>
+                      <TableRow className="text-xs">
                         <TableHead>Producto</TableHead>
                         <TableHead>Blisters</TableHead>
                         <TableHead>Unidades</TableHead>
@@ -914,22 +1188,22 @@ export default function NuevaVentaPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {carrito.map((item) => (
-                        <TableRow key={item.codigoBarras}>
+                      {carrito.map(item => (
+                        <TableRow key={item.codigoBarras} className="text-[13px]">
                           <TableCell>
-                            <div>
-                              <div className="font-medium flex items-center gap-2">
-                                {item.nombre}
-                                {(item.descuento ?? 0) > 0 && (
-                                  <Badge
-                                    variant="outline"
-                                    className="bg-yellow-100 text-yellow-800 border-yellow-300 ml-2"
-                                  >
-                                    Descuento
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="text-sm text-muted-foreground">{item.codigoBarras}</div>
+                            <div className="font-medium flex items-center gap-2">
+                              {item.nombre}
+                              {(item.descuento ?? 0) > 0 && (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-yellow-100 text-yellow-800 border-yellow-300 px-1 py-0 text-[10px]"
+                                >
+                                  Desc
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground">
+                              {item.codigoBarras}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -937,24 +1211,32 @@ export default function NuevaVentaPage() {
                               <Button
                                 variant="outline"
                                 size="icon"
-                                className="h-8 w-8"
-                                onClick={() => cambiarCantidadCarrito(item.codigoBarras, "blister", -1)}
+                                className="h-7 w-7"
+                                onClick={() =>
+                                  cambiarCantidadCarrito(item.codigoBarras, "blister", -1)
+                                }
                                 disabled={item.cantidadBlister === 0}
                               >
                                 <Minus className="h-4 w-4" />
                               </Button>
-                              <span className="w-8 text-center">{item.cantidadBlister}</span>
+                              <span className="w-6 text-center text-sm">
+                                {item.cantidadBlister}
+                              </span>
                               <Button
                                 variant="outline"
                                 size="icon"
-                                className="h-8 w-8"
-                                onClick={() => cambiarCantidadCarrito(item.codigoBarras, "blister", 1)}
+                                className="h-7 w-7"
+                                onClick={() =>
+                                  cambiarCantidadCarrito(item.codigoBarras, "blister", 1)
+                                }
                               >
                                 <Plus className="h-4 w-4" />
                               </Button>
-                              <span className="text-xs text-muted-foreground ml-2">
-                                {item.cantidadUnidadesBlister ? `${item.cantidadUnidadesBlister}u/blister` : ""}
-                              </span>
+                              {item.cantidadUnidadesBlister ? (
+                                <span className="text-[10px] text-muted-foreground ml-1">
+                                  {item.cantidadUnidadesBlister}u/blister
+                                </span>
+                              ) : null}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -962,24 +1244,30 @@ export default function NuevaVentaPage() {
                               <Button
                                 variant="outline"
                                 size="icon"
-                                className="h-8 w-8"
-                                onClick={() => cambiarCantidadCarrito(item.codigoBarras, "unidad", -1)}
+                                className="h-7 w-7"
+                                onClick={() =>
+                                  cambiarCantidadCarrito(item.codigoBarras, "unidad", -1)
+                                }
                                 disabled={item.cantidadUnidad === 0}
                               >
                                 <Minus className="h-4 w-4" />
                               </Button>
-                              <span className="w-8 text-center">{item.cantidadUnidad}</span>
+                              <span className="w-6 text-center text-sm">
+                                {item.cantidadUnidad}
+                              </span>
                               <Button
                                 variant="outline"
                                 size="icon"
-                                className="h-8 w-8"
-                                onClick={() => cambiarCantidadCarrito(item.codigoBarras, "unidad", 1)}
+                                className="h-7 w-7"
+                                onClick={() =>
+                                  cambiarCantidadCarrito(item.codigoBarras, "unidad", 1)
+                                }
                               >
                                 <Plus className="h-4 w-4" />
                               </Button>
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="font-semibold">
                             S/ {item.subtotal.toFixed(2)}
                           </TableCell>
                           <TableCell className="text-right">
@@ -993,6 +1281,15 @@ export default function NuevaVentaPage() {
                           </TableCell>
                         </TableRow>
                       ))}
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-right font-medium">
+                          Total
+                        </TableCell>
+                        <TableCell className="font-bold">
+                          S/ {total.toFixed(2)}
+                        </TableCell>
+                        <TableCell />
+                      </TableRow>
                     </TableBody>
                   </Table>
                 </div>
@@ -1001,18 +1298,22 @@ export default function NuevaVentaPage() {
           </Card>
         </div>
 
-        {/* Pago y Resumen */}
+        {/* Columna derecha (Resumen / Pago) */}
         <div className="space-y-6">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle>Método de Pago</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <RadioGroup value={metodoPago} onValueChange={v => {
-                setMetodoPago(v as any)
-                setMontoEfectivo("")
-                setMontoYape("")
-              }}>
+              <RadioGroup
+                value={metodoPago}
+                onValueChange={v => {
+                  setMetodoPago(v as any)
+                  setMontoEfectivo("")
+                  setMontoYape("")
+                }}
+                className="grid gap-2"
+              >
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="efectivo" id="efectivo" />
                   <Label htmlFor="efectivo">Efectivo</Label>
@@ -1026,87 +1327,94 @@ export default function NuevaVentaPage() {
                   <Label htmlFor="mixto">Mixto (Efectivo + Yape)</Label>
                 </div>
               </RadioGroup>
+
               {metodoPago === "efectivo" && (
                 <div className="space-y-2">
-                  <Label htmlFor="monto-efectivo">Monto recibido</Label>
+                  <Label htmlFor="monto-efectivo">Monto efectivo</Label>
                   <Input
                     id="monto-efectivo"
                     type="number"
                     step="0.01"
-                    placeholder="0.00"
                     value={montoEfectivo}
-                    onChange={(e) => setMontoEfectivo(e.target.value)}
+                    onChange={e => setMontoEfectivo(e.target.value)}
+                    placeholder="0.00"
                   />
                   {faltante > 0 && (
-                    <div className="text-sm text-red-600">Faltan S/ {faltante.toFixed(2)} para completar.</div>
+                    <div className="text-xs text-red-600">
+                      Faltan S/ {faltante.toFixed(2)}
+                    </div>
                   )}
                 </div>
               )}
               {metodoPago === "yape" && (
                 <div className="space-y-2">
-                  <Label htmlFor="monto-yape">Monto recibido (Yape)</Label>
+                  <Label htmlFor="monto-yape">Monto Yape</Label>
                   <Input
                     id="monto-yape"
                     type="number"
                     step="0.01"
-                    placeholder="0.00"
                     value={montoYape}
-                    onChange={(e) => setMontoYape(e.target.value)}
+                    onChange={e => setMontoYape(e.target.value)}
+                    placeholder="0.00"
                   />
                   {faltante > 0 && (
-                    <div className="text-sm text-red-600">Faltan S/ {faltante.toFixed(2)} para completar.</div>
+                    <div className="text-xs text-red-600">
+                      Faltan S/ {faltante.toFixed(2)}
+                    </div>
                   )}
                 </div>
               )}
               {metodoPago === "mixto" && (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="monto-efectivo-mixto">Monto en efectivo</Label>
+                    <Label htmlFor="monto-efectivo-mixto">Efectivo</Label>
                     <Input
                       id="monto-efectivo-mixto"
                       type="number"
                       step="0.01"
-                      placeholder="0.00"
                       value={montoEfectivo}
-                      onChange={(e) => setMontoEfectivo(e.target.value)}
+                      onChange={e => setMontoEfectivo(e.target.value)}
+                      placeholder="0.00"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="monto-yape-mixto">Monto Yape</Label>
+                    <Label htmlFor="monto-yape-mixto">Yape</Label>
                     <Input
                       id="monto-yape-mixto"
                       type="number"
                       step="0.01"
-                      placeholder="0.00"
                       value={montoYape}
-                      onChange={(e) => setMontoYape(e.target.value)}
+                      onChange={e => setMontoYape(e.target.value)}
+                      placeholder="0.00"
                     />
                   </div>
                   {faltante > 0 && (
-                    <div className="text-sm text-red-600">Faltan S/ {faltante.toFixed(2)} para completar.</div>
+                    <div className="text-xs text-red-600">
+                      Faltan S/ {faltante.toFixed(2)}
+                    </div>
                   )}
                 </div>
               )}
             </CardContent>
           </Card>
 
-            <Card>
+          <Card>
             <CardHeader className="pb-3">
-              <CardTitle>Resumen de Venta</CardTitle>
+              <CardTitle>Resumen</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
+            <CardContent className="space-y-4 text-sm">
+              <div className="space-y-1">
                 <div className="flex justify-between">
-                  <span>Subtotal:</span>
+                  <span>Subtotal</span>
                   <span>S/ {total.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between font-bold text-lg">
-                  <span>Total:</span>
+                <div className="flex justify-between font-semibold text-base">
+                  <span>Total</span>
                   <span>S/ {total.toFixed(2)}</span>
                 </div>
                 {vuelto > 0 && (
                   <div className="flex justify-between text-emerald-600">
-                    <span>Vuelto:</span>
+                    <span>Vuelto</span>
                     <span>S/ {vuelto.toFixed(2)}</span>
                   </div>
                 )}
@@ -1121,8 +1429,8 @@ export default function NuevaVentaPage() {
                 {cargandoCaja
                   ? "Verificando caja..."
                   : cajaAbierta
-                    ? "Procesar Venta"
-                    : "Abrir caja para vender"}
+                  ? "Procesar Venta"
+                  : "Abrir caja para vender"}
               </Button>
             </CardContent>
           </Card>

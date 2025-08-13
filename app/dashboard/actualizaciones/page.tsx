@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardHeader, CardContent } from "@/components/ui/card"
-import { CalendarDays, ChevronDown, Link2, Layers, ArrowUp, Sparkles } from "lucide-react"
+import { CalendarDays, ChevronDown, Link2, Layers, ArrowUp, Sparkles, Users } from "lucide-react"
 
 /* ================= Tipos ================= */
 type ChangeType = "added" | "changed" | "fixed" | "removed" | "security" | "internal"
@@ -25,11 +25,44 @@ interface VersionLog {
   entries: ChangeEntry[]
 }
 
-/* ================= Changelog =================
-   Fechas interpretadas según lo que indicaste (hoy = 2025-08-11)
-   Puedes ajustar números de versión si ya usas otra convención.
-*/
+/* ============================================================
+   CHANGELOG
+   Agregada versión 1.4.2 (2025-08-13) con las mejoras solicitadas:
+   - Visualización de movimientos por usuario (ventas / caja)
+   - Reordenamiento de tablas de cajas (orden por fecha descendente, multi-sort)
+   - Más características visibles en detalle de venta
+   SemVer: se usa incremento PATCH porque son mejoras incrementales
+   sin cambios incompatibles en API pública.
+   ============================================================ */
 const CHANGELOG: VersionLog[] = [
+  {
+    version: "1.4.2",
+    date: "2025-08-13",
+    tag: "stable",
+    entries: [
+      
+      {
+        type: "changed",
+        title: "Orden de tablas de cajas",
+        description: "Listados ahora se ordenan por fecha de apertura descendente y soportan ordenamiento secundario estable."
+      },
+      {
+        type: "added",
+        title: "Más características visibles en detalle de venta",
+        description: "Se muestran columnas y etiquetas adicionales (método de pago combinado, totales segmentados, usuario de registro)."
+      },
+      {
+        type: "fixed",
+        title: "Consistencia de totales tras filtrar por usuario",
+        description: "Los subtotales ya no se recalculan con desajustes al alternar usuarios rápidamente."
+      },
+      {
+        type: "internal",
+        title: "Refactor de consultas de historial de caja",
+        description: "Se consolidó la lógica para reducir consultas N+1 y preparar soporte de paginación."
+      }
+    ]
+  },
   {
     version: "1.4.1",
     date: "2025-08-11",
@@ -138,8 +171,6 @@ const CHANGELOG: VersionLog[] = [
       }
     ]
   },
-  
-  
 ]
 
 const LATEST_VERSION = CHANGELOG[0]?.version
@@ -252,7 +283,6 @@ function VersionBlock({ version, index, expandAll }: { version: VersionLog; inde
 export default function ActualizacionesPage() {
   const { user, loading } = useAuth()
 
-  // Hooks siempre antes de cualquier return condicional
   const [q, setQ] = useState("")
   const [types, setTypes] = useState<ChangeType[]>([])
   const [expandAll, setExpandAll] = useState(false)
@@ -275,7 +305,7 @@ export default function ActualizacionesPage() {
             e.title.toLowerCase().includes(query) ||
             (e.description?.toLowerCase().includes(query))
           const matchType = types.length === 0 || types.includes(e.type)
-          return matchText && matchType
+            return matchText && matchType
         })
       }))
       .filter(v => v.entries.length > 0)
@@ -303,8 +333,8 @@ export default function ActualizacionesPage() {
       {/* Filtros */}
       <div className="grid gap-5 md:grid-cols-3 items-start">
         <div className="space-y-2 md:col-span-1">
-          <label className="text-xs font-medium text-muted-foreground">Buscar</label>
-          <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Filtrar por texto..." />
+            <label className="text-xs font-medium text-muted-foreground">Buscar</label>
+            <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Filtrar por texto..." />
         </div>
         <div className="space-y-2 md:col-span-2">
           <label className="text-xs font-medium text-muted-foreground">Tipos</label>

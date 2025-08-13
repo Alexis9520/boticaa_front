@@ -630,7 +630,7 @@ export default function ProductosPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="categoria">Categoría</Label>
+                      <Label htmlFor="categoria"></Label>
                       <ComboBoxCategoria
                         value={nuevoProducto.categoria}
                         onChange={(categoria) => setNuevoProducto({ ...nuevoProducto, categoria })}
@@ -1320,7 +1320,7 @@ export default function ProductosPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Categoría</Label>
+                    <Label></Label>
                     <ComboBoxCategoria
                       value={editandoProducto.categoria}
                       onChange={(categoria) =>

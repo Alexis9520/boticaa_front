@@ -151,19 +151,7 @@ export default function Sidebar() {
           )}
         </span>
         <span className="flex-1 truncate">{item.title}</span>
-        {/* Badge “Nuevo” (solo cuando es reciente y aún no visto o siempre que sea reciente según prefieras) */}
-        {item.id === "changelog" && isLatestRecent && (
-          <span
-            className={cn(
-              "ml-auto text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5",
-              active
-                ? "bg-emerald-600 text-white"
-                : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-            )}
-          >
-            Nuevo
-          </span>
-        )}
+        
       </Link>
     )
   }
