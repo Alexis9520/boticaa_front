@@ -440,20 +440,7 @@ export default function VentasPage() {
               />
             </div>
             <div className="lg:col-span-3 flex gap-3 items-center">
-              <div className="flex flex-col text-xs text-muted-foreground gap-1">
-                <span className="flex items-center gap-1">
-                  <Layers className="h-3.5 w-3.5" /> Efectivo:
-                  <b className="text-foreground tabular-nums">
-                    S/ {totalEfectivo.toFixed(2)}
-                  </b>
-                </span>
-                <span className="flex items-center gap-1">
-                  <Wallet className="h-3.5 w-3.5" /> Digital:
-                  <b className="text-foreground tabular-nums">
-                    S/ {totalDigital.toFixed(2)}
-                  </b>
-                </span>
-              </div>
+              
               <div className="ml-auto text-[11px] text-muted-foreground">
                 <div className="flex items-center gap-1">
                   <Filter className="h-3.5 w-3.5" /> {totalBoletas} total

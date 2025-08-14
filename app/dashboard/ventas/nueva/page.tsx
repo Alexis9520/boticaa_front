@@ -24,7 +24,6 @@ interface Producto {
   cantidadUnidadesBlister?: number
   cantidadGeneral: number
   descuento: number
-  // NUEVOS CAMPOS
   concentracion?: string
   laboratorio?: string
   tipoMedicamento?: "GENÉRICO" | "MARCA" | string
@@ -78,15 +77,6 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
   } catch {
     return null
   }
-}
-
-function generarNumeroBoleta(serie = "B") {
-  const now = new Date()
-  const yyyy = now.getFullYear()
-  const mm = String(now.getMonth() + 1).padStart(2, "0")
-  const dd = String(now.getDate()).padStart(2, "0")
-  const rand = Math.floor(Math.random() * 90000) + 10000
-  return `${serie}-${yyyy}${mm}${dd}-${rand}`
 }
 
 function buildVentaPreviewFromState(params: {
@@ -374,7 +364,6 @@ export default function NuevaVentaPage() {
         )
       : []
 
-    // Ordenamiento
     base.sort((a, b) => {
       const mul = sortDir === "asc" ? 1 : -1
       switch (sortField) {
@@ -400,7 +389,6 @@ export default function NuevaVentaPage() {
     return base
   }, [productos, busqueda, sortField, sortDir])
 
-  // Totales
   const total = carrito.reduce(
     (sum, item) =>
       sum +
@@ -427,7 +415,6 @@ export default function NuevaVentaPage() {
     faltante = pagado < total ? total - pagado : 0
   }
 
-  // Handlers
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDir(d => (d === "asc" ? "desc" : "asc"))
@@ -495,7 +482,7 @@ export default function NuevaVentaPage() {
           nombre: producto.nombre,
           precioVentaUnd: producto.precioVentaUnd,
           precioVentaBlister: producto.precioVentaBlister,
-            cantidadUnidadesBlister: producto.cantidadUnidadesBlister,
+          cantidadUnidadesBlister: producto.cantidadUnidadesBlister,
           descuento: producto.descuento,
           cantidadBlister: sel.blisters,
           cantidadUnidad: sel.unidades,
@@ -551,6 +538,7 @@ export default function NuevaVentaPage() {
     }
   }
 
+  // --- MODIFICADO: procesarVenta usa el número que responde el backend ---
   const procesarVenta = async () => {
     if (carrito.length === 0) {
       toast({
@@ -614,9 +602,8 @@ export default function NuevaVentaPage() {
       return
     }
 
-    const numeroBoleta = generarNumeroBoleta(configuracionBoleta.serieBoleta)
+    // No generes el número aquí, deja que el backend lo maneje
     const ventaDTO = {
-      numero: numeroBoleta,
       dniCliente: dniCliente.trim() || "",
       nombreCliente,
       dniVendedor: usuarioSesion?.dni || "",
@@ -636,15 +623,21 @@ export default function NuevaVentaPage() {
     }
 
     try {
-      await fetchWithAuth(apiUrl("/api/ventas"), {
+      const resp = await fetchWithAuth(apiUrl("/api/ventas"), {
         method: "POST",
         body: JSON.stringify(ventaDTO),
       })
+
+      if (!resp?.numero) {
+        toast({ title: "Error", description: "No se recibió número de boleta", variant: "destructive" })
+        return
+      }
+
       toast({ title: "Venta realizada", description: "Venta registrada correctamente" })
 
       const ventaPreview: VentaPreview = buildVentaPreviewFromState({
-        numero: numeroBoleta,
-        fecha: new Date().toLocaleString(),
+        numero: resp.numero, // Usa el número que responde el backend
+        fecha: resp.fecha || new Date().toLocaleString(),
         carrito,
         total,
         metodoPago,
@@ -721,7 +714,6 @@ export default function NuevaVentaPage() {
 
   const procesarVentaDisabled = carrito.length === 0 || !cajaAbierta || cargandoCaja
 
-  // UI Helpers
   function SortButton({ field, children }: { field: SortField; children: React.ReactNode }) {
     const active = sortField === field
     const dirIcon =
