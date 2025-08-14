@@ -1,6 +1,32 @@
 "use client"
 
-import { useEffect, useState, useRef, useMemo } from "react"
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react"
+import { motion, AnimatePresence } from "framer-motion"
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  Calculator,
+  DollarSign,
+  Plus,
+  TrendingDown,
+  TrendingUp,
+  AlertTriangle,
+  RefreshCcw,
+  Eye,
+  Flame,
+  Layers,
+  Wallet,
+  Gauge,
+  History,
+  LibraryBig,
+  Sparkles,
+  Rocket,
+  ShieldCheck,
+  Clock8,
+  Zap,
+  Workflow
+} from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -17,24 +43,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
+  DialogTrigger
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { motion, AnimatePresence } from "framer-motion"
-import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-  Calculator,
-  DollarSign,
-  Plus,
-  TrendingDown,
-  TrendingUp,
-  AlertTriangle,
-  RefreshCcw,
-  Eye
-} from "lucide-react"
+import { cn } from "@/lib/utils"
 
+/* -------------------------------------------------------------------------- */
+/*                                    Tipos                                   */
+/* -------------------------------------------------------------------------- */
 type Usuario = {
   id?: number
   nombreCompleto: string
@@ -53,7 +70,7 @@ type Movimiento = {
 
 type CajaResumen = {
   id?: number
-  idCaja?: number      // por si el backend usa otra propiedad
+  idCaja?: number
   efectivo: number
   totalYape: number
   ingresos: number
@@ -66,7 +83,7 @@ type CajaResumen = {
   ventasMixto: number
   totalVentas: number
   movimientos?: Movimiento[]
-  diferencia?: number
+  diferencia?: number          // Sólo válido cuando la caja está cerrada
   fechaApertura?: string
   fechaCierre?: string
   usuarioResponsable?: string
@@ -91,23 +108,24 @@ type UltimaCajaCerrada = {
   movimientos: Movimiento[]
 }
 
+/* -------------------------------------------------------------------------- */
+/*                              Helpers de Storage                            */
+/* -------------------------------------------------------------------------- */
 async function fetchWithToken(url: string, options: RequestInit = {}): Promise<any> {
-  const token = localStorage.getItem("token")
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
   const headers: HeadersInit = {
     ...(options.headers || {}),
     Authorization: token ? `Bearer ${token}` : "",
-    "Content-Type": "application/json",
+    "Content-Type": "application/json"
   }
   const res = await fetch(url, { ...options, headers, credentials: "include" })
   if (res.status === 204) return null
-  const contentType = res.headers.get("content-type")
-  if (contentType && contentType.includes("application/json")) return await res.json()
-  const text = await res.text()
-  if (text) return text
-  return null
+  const ct = res.headers.get("content-type")
+  if (ct && ct.includes("application/json")) return res.json()
+  const txt = await res.text()
+  return txt || null
 }
 
-// Cache localStorage de movimientos por caja
 function storeMovimientosCaja(cajaId: number, movimientos: Movimiento[]) {
   try {
     localStorage.setItem(`caja_movs_${cajaId}`, JSON.stringify({ movimientos, ts: Date.now() }))
@@ -125,12 +143,14 @@ function loadMovimientosCajaCache(cajaId: number): Movimiento[] | null {
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/*                               Componente Page                              */
+/* -------------------------------------------------------------------------- */
 export default function CajaPage() {
   const { toast } = useToast()
 
   const [usuario, setUsuario] = useState<Usuario | null>(null)
 
-  // Estados generales
   const [cajaAbierta, setCajaAbierta] = useState(false)
   const [resumen, setResumen] = useState<CajaResumen | null>(null)
   const [movimientos, setMovimientos] = useState<Movimiento[]>([])
@@ -148,7 +168,7 @@ export default function CajaPage() {
   const [confirmMovimiento, setConfirmMovimiento] = useState(false)
   const movimientoPendiente = useRef<{ tipo: string; monto: string; descripcion: string } | null>(null)
 
-  // NUEVOS estados para persistencia y consulta histórica
+  // Histórico extendido
   const [ultimaCajaCerrada, setUltimaCajaCerrada] = useState<UltimaCajaCerrada | null>(null)
   const [dialogHistMovsOpen, setDialogHistMovsOpen] = useState(false)
   const [cajaSeleccionada, setCajaSeleccionada] = useState<HistorialCaja | null>(null)
@@ -159,7 +179,7 @@ export default function CajaPage() {
   const [histPage, setHistPage] = useState(1)
   const [histPageSize, setHistPageSize] = useState(10)
 
-  // Cargar usuario
+  /* -------------------------- Carga de usuario local ------------------------- */
   useEffect(() => {
     if (typeof window === "undefined") return
     const storedUsuario = localStorage.getItem("usuario")
@@ -187,9 +207,9 @@ export default function CajaPage() {
       }),
     [historial]
   )
-
   const totalHistorial = historialOrdenado.length
   const totalHistPages = Math.max(1, Math.ceil(totalHistorial / histPageSize))
+
   useEffect(() => {
     setHistPage(p => Math.min(p, totalHistPages))
   }, [histPageSize, totalHistPages])
@@ -203,8 +223,8 @@ export default function CajaPage() {
     [historialOrdenado, histPage, histPageSize]
   )
 
-  // Cargar todo
-  const refreshAll = async () => {
+  /* ------------------------------ Carga general ------------------------------ */
+  const refreshAll = useCallback(async () => {
     if (!usuario) return
     setLoading(true)
     setError(null)
@@ -212,35 +232,37 @@ export default function CajaPage() {
       const data = await fetchWithToken(apiUrl(`/api/cajas/actual?dniUsuario=${usuario.dni}`))
       if (data) {
         const idCaja = data.id ?? data.idCaja
-        setResumen({
+        const cajaEstaAbierta = !data.fechaCierre
+        const resumenData: CajaResumen = {
           efectivo: data.efectivo ?? 0,
           totalYape: data.totalYape ?? 0,
           ingresos: data.ingresos ?? 0,
           egresos: data.egresos ?? 0,
           efectivoInicial: data.efectivoInicial ?? 0,
           efectivoFinal: data.efectivoFinal ?? 0,
-          cajaAbierta: !data.fechaCierre,
+          cajaAbierta: cajaEstaAbierta,
           ventasEfectivo: data.ventasEfectivo ?? 0,
           ventasYape: data.ventasYape ?? 0,
           ventasMixto: data.ventasMixto ?? 0,
           totalVentas: data.totalVentas ?? 0,
           movimientos: data.movimientos ?? [],
-          diferencia: data.diferencia ?? 0,
+          // IMPORTANTE: sólo conservar diferencia si la caja está cerrada
+          diferencia: cajaEstaAbierta ? undefined : (data.diferencia ?? 0),
           fechaApertura: data.fechaApertura,
           fechaCierre: data.fechaCierre,
           usuarioResponsable: data.usuarioResponsable,
           id: idCaja,
           idCaja
-        })
-        setMovimientos(data.movimientos ?? [])
-        setCajaAbierta(!data.fechaCierre)
-        setEfectivoInicial((data.efectivoInicial ?? 0).toFixed(2))
+        }
+        setResumen(resumenData)
+        setMovimientos(resumenData.movimientos ?? [])
+        setCajaAbierta(cajaEstaAbierta)
+        setEfectivoInicial(resumenData.efectivoInicial.toFixed(2))
+        // Limpiar “efectivo contado” al cambiar de estado
         setEfectivoFinalDeclarado("")
       } else {
-        // No hay caja actual (cerrada). Intentar rehidratar última cerrada desde localStorage si no la tenemos
         setResumen(null)
         setCajaAbierta(false)
-        // NO limpiamos movimientos si tenemos snapshot de la última
         if (ultimaCajaCerrada) {
           setMovimientos(ultimaCajaCerrada.movimientos)
         } else {
@@ -254,57 +276,58 @@ export default function CajaPage() {
         _key:
           h.id != null
             ? `caja-${h.id}`
-            : `caja-${h.fechaApertura}-${h.fechaCierre ?? "abierta"}-${h.usuarioResponsable}`,
+            : `caja-${h.fechaApertura}-${h.fechaCierre ?? "abierta"}-${h.usuarioResponsable}`
       }))
       setHistorial(histConKey)
 
-      const cajasAbiertas = await fetchWithToken(apiUrl("/api/cajas/abiertas"))
-      setAlertaCajaAbierta(Array.isArray(cajasAbiertas) && cajasAbiertas.length > 0)
+      const abiertas = await fetchWithToken(apiUrl("/api/cajas/abiertas"))
+      setAlertaCajaAbierta(Array.isArray(abiertas) && abiertas.length > 0)
     } catch (e: any) {
       setError("Error al refrescar datos: " + (e?.message || "desconocido"))
       toast({
         title: "Error",
         description: e?.message || "No se pudo refrescar los datos",
-        variant: "destructive",
+        variant: "destructive"
       })
     } finally {
       setLoading(false)
     }
-  }
+  }, [toast, ultimaCajaCerrada, usuario])
 
-  useEffect(() => { refreshAll() }, [usuario])
+  useEffect(() => {
+    refreshAll()
+  }, [refreshAll])
 
   useEffect(() => {
     if (!autoRefresh) return
-    const interval = setInterval(() => { refreshAll() }, 30000)
+    const interval = setInterval(() => {
+      refreshAll()
+    }, 30000)
     return () => clearInterval(interval)
-  }, [autoRefresh, usuario, ultimaCajaCerrada])
+  }, [autoRefresh, refreshAll])
 
-  // Rehidratación de última caja cerrada (si se guardó antes)
+  /* ------------------ Rehidratación última caja cerrada local ----------------- */
   useEffect(() => {
-    if (cajaAbierta) return
-    if (ultimaCajaCerrada) return
+    if (cajaAbierta || ultimaCajaCerrada) return
     try {
       const raw = localStorage.getItem("ultima_caja_cerrada")
       if (raw) {
         const parsed: UltimaCajaCerrada = JSON.parse(raw)
-        if (parsed && parsed.id && Array.isArray(parsed.movimientos)) {
+        if (parsed?.id && Array.isArray(parsed.movimientos)) {
           setUltimaCajaCerrada(parsed)
-          // Solo si no hay movimientos cargados
           if (movimientos.length === 0) setMovimientos(parsed.movimientos)
         }
       }
     } catch {}
   }, [cajaAbierta, movimientos.length, ultimaCajaCerrada])
 
-  // Cierre de caja
+  /* ------------------------------- Acciones Caja ------------------------------ */
   const handleCerrarCaja = () => setConfirmCerrar(true)
   const confirmarCerrarCaja = async () => {
     setConfirmCerrar(false)
     await cerrarCaja()
   }
 
-  // Confirmación de movimiento alto
   const handleAgregarMovimiento = () => {
     const monto = parseFloat(nuevoMovimiento.monto)
     if (monto >= 1000) {
@@ -328,53 +351,83 @@ export default function CajaPage() {
     return !isNaN(val) && val > 0
   }
   const isValidEfectivo = (valor: string) => {
-    if (!valor) return false
-    const val = Number(valor)
-    return !isNaN(val) && val >= 0
+    if (valor === "") return false
+    const v = Number(valor)
+    return !isNaN(v) && v >= 0
   }
 
   const abrirCaja = async () => {
     if (!isValidEfectivo(efectivoInicial)) {
-      toast({ title: "Error", description: "Ingresa un monto válido y no negativo para abrir la caja", variant: "destructive" })
+      toast({
+        title: "Monto inválido",
+        description: "Ingresa un efectivo inicial válido (>= 0)",
+        variant: "destructive"
+      })
       return
     }
     if (!usuario?.dni) {
-      toast({ title: "Error", description: "No se encontró el usuario en sesión", variant: "destructive" })
+      toast({
+        title: "Usuario no encontrado",
+        description: "No se pudo detectar el DNI de sesión",
+        variant: "destructive"
+      })
       return
     }
     setLoading(true)
     try {
       await fetchWithToken(apiUrl("/api/cajas/abrir"), {
         method: "POST",
-        body: JSON.stringify({ dniUsuario: usuario.dni, efectivoInicial: Number.parseFloat(efectivoInicial) }),
+        body: JSON.stringify({
+          dniUsuario: usuario.dni,
+          efectivoInicial: parseFloat(efectivoInicial)
+        })
       })
       await refreshAll()
-      toast({ title: "Caja abierta", description: `Caja abierta con S/ ${efectivoInicial}` })
+      toast({
+        title: "Caja abierta",
+        description: `Apertura exitosa con S/ ${efectivoInicial}`
+      })
     } catch {
-      toast({ title: "Error al abrir caja", description: "Error inesperado en la petición", variant: "destructive" })
-    } finally { setLoading(false) }
+      toast({
+        title: "Error al abrir",
+        description: "Revisa la conexión o intenta nuevamente",
+        variant: "destructive"
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
   const cerrarCaja = async () => {
     if (!usuario?.dni) {
-      toast({ title: "Error", description: "No se encontró el usuario en sesión", variant: "destructive" })
+      toast({
+        title: "Usuario no encontrado",
+        description: "No se pudo detectar la sesión",
+        variant: "destructive"
+      })
       return
     }
     if (!isValidEfectivo(efectivoFinalDeclarado)) {
-      toast({ title: "Error", description: "Debes ingresar el efectivo contado (valor no negativo)", variant: "destructive" })
+      toast({
+        title: "Efectivo contado inválido",
+        description: "Debes registrar un valor numérico >= 0",
+        variant: "destructive"
+      })
       return
     }
 
-    // Snapshot ANTES de cerrar (para conservar movimientos de la caja que se cerrará)
+    // Snapshot previa
     const idCajaActual = resumen?.id ?? resumen?.idCaja
     if (idCajaActual && movimientos.length > 0 && resumen?.fechaApertura) {
-      // Guardar snapshot provisional (fechaCierre vendrá luego, la completaremos tras refrescar)
-      setUltimaCajaCerrada(prev => prev ?? {
-        id: idCajaActual,
-        fechaApertura: resumen.fechaApertura!,
-        fechaCierre: new Date().toISOString(), // temporal
-        movimientos: [...movimientos]
-      })
+      setUltimaCajaCerrada(prev =>
+        prev ||
+        {
+          id: idCajaActual,
+          fechaApertura: resumen.fechaApertura!,
+          fechaCierre: new Date().toISOString(),
+          movimientos: [...movimientos]
+        }
+      )
     }
 
     setLoading(true)
@@ -383,33 +436,35 @@ export default function CajaPage() {
         method: "POST",
         body: JSON.stringify({
           dniUsuario: usuario.dni,
-          efectivoFinalDeclarado: Number.parseFloat(efectivoFinalDeclarado)
-        }),
+          efectivoFinalDeclarado: parseFloat(efectivoFinalDeclarado)
+        })
       })
-      toast({ title: "Caja cerrada", description: "La caja ha sido cerrada correctamente" })
+      toast({
+        title: "Caja cerrada",
+        description: "Cierre registrado correctamente"
+      })
       await refreshAll()
-      // Completar snapshot (si la caja ya tiene fechaCierre en historial)
+
       if (idCajaActual) {
         const histItem = historial.find(h => h.id === idCajaActual)
         if (histItem) {
-          setUltimaCajaCerrada({
+          const snapshot: UltimaCajaCerrada = {
             id: idCajaActual,
             fechaApertura: histItem.fechaApertura,
             fechaCierre: histItem.fechaCierre || new Date().toISOString(),
-            movimientos: [...movimientos],
-          })
-          // Persistir local
+            movimientos: [...movimientos]
+          }
+          setUltimaCajaCerrada(snapshot)
           storeMovimientosCaja(idCajaActual, movimientos)
-          localStorage.setItem("ultima_caja_cerrada", JSON.stringify({
-            id: idCajaActual,
-            fechaApertura: histItem.fechaApertura,
-            fechaCierre: histItem.fechaCierre || new Date().toISOString(),
-            movimientos: [...movimientos],
-          }))
+          localStorage.setItem("ultima_caja_cerrada", JSON.stringify(snapshot))
         }
       }
     } catch {
-      toast({ title: "Error al cerrar caja", description: "Error inesperado en la petición", variant: "destructive" })
+      toast({
+        title: "Error al cerrar",
+        description: "Revisa la operación y vuelve a intentar",
+        variant: "destructive"
+      })
     } finally {
       setLoading(false)
     }
@@ -418,68 +473,70 @@ export default function CajaPage() {
   const agregarMovimiento = async (movParam?: { tipo: string; monto: string; descripcion: string }) => {
     const mov = movParam || nuevoMovimiento
     if (!mov.tipo || !mov.monto || !mov.descripcion) {
-      toast({ title: "Error", description: "Completa todos los campos del movimiento", variant: "destructive" }); return;
+      toast({
+        title: "Campos incompletos",
+        description: "Completa tipo, monto y descripción",
+        variant: "destructive"
+      })
+      return
     }
     if (!isValidMonto(mov.monto)) {
-      toast({ title: "Error", description: "El monto debe ser mayor a 0", variant: "destructive" }); return;
+      toast({
+        title: "Monto inválido",
+        description: "El monto debe ser numérico y > 0",
+        variant: "destructive"
+      })
+      return
     }
     if (!usuario?.dni) {
-      toast({ title: "Error", description: "No se encontró el usuario en sesión", variant: "destructive" }); return;
+      toast({
+        title: "Usuario no encontrado",
+        description: "No se pudo detectar la sesión",
+        variant: "destructive"
+      })
+      return
     }
     setLoading(true)
     try {
       await fetchWithToken(apiUrl("/api/cajas/movimiento"), {
         method: "POST",
-        body: JSON.stringify({ ...mov, monto: Number.parseFloat(mov.monto), dniUsuario: usuario.dni }),
+        body: JSON.stringify({
+          ...mov,
+          monto: parseFloat(mov.monto),
+          dniUsuario: usuario.dni
+        })
       })
       await refreshAll()
       setNuevoMovimiento({ tipo: "", monto: "", descripcion: "" })
-      toast({ title: "Movimiento agregado", description: "Registrado correctamente" })
+      toast({ title: "Movimiento registrado" })
     } catch (e: any) {
-      toast({ title: "Error", description: e?.message || "Error inesperado", variant: "destructive" })
-    } finally { setLoading(false) }
+      toast({
+        title: "Error",
+        description: e?.message || "No se pudo registrar",
+        variant: "destructive"
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
-  function DiferenciaCierreCard({ diferencia }: { diferencia: number | undefined }) {
-    if (typeof diferencia !== "number" || diferencia === 0) return null
-    const esFaltante = diferencia < 0
-    return (
-      <AnimatePresence>
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 10 }}
-          transition={{ duration: 0.4 }}
-        >
-          <Card className={esFaltante ? "border-red-600" : "border-emerald-600"}>
-            <CardHeader className="flex flex-row items-center gap-2 pb-2">
-              <AlertTriangle className={esFaltante ? "text-red-600" : "text-emerald-600"} />
-              <CardTitle className={esFaltante ? "text-red-600" : "text-emerald-600"}>
-                {esFaltante ? "Faltante en cierre" : "Sobrante en cierre"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p>
-                {esFaltante
-                  ? `Faltan S/ ${Math.abs(diferencia).toFixed(2)} respecto al esperado.`
-                  : `Sobran S/ ${Math.abs(diferencia).toFixed(2)} respecto al esperado.`}
-              </p>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </AnimatePresence>
-    )
-  }
+  /* -------------------------- Cálculos y derivados --------------------------- */
+  const efectivoEsperadoNum = resumen
+    ? resumen.efectivoInicial + resumen.ingresos + resumen.ventasEfectivo - resumen.egresos
+    : 0
 
-  const calcularEfectivoEsperado = () => {
-    if (!resumen) return "--"
-    return (
-      resumen.efectivoInicial +
-      resumen.ingresos +
-      resumen.ventasEfectivo -
-      resumen.egresos
-    ).toFixed(2)
-  }
+  const efectivoContadoNum =
+    efectivoFinalDeclarado.trim() !== "" && !isNaN(Number(efectivoFinalDeclarado))
+      ? Number(efectivoFinalDeclarado)
+      : null
+
+  // Diferencia preview mientras caja está abierta (sin usar el backend)
+  const diferenciaPreview =
+    cajaAbierta && efectivoContadoNum !== null
+      ? efectivoContadoNum - efectivoEsperadoNum
+      : undefined
+
+  const calcularEfectivoEsperado = () => efectivoEsperadoNum.toFixed(2)
 
   const movimientosFiltrados = movimientos.filter(mov =>
     (!movimientoSearch ||
@@ -490,7 +547,6 @@ export default function CajaPage() {
       mov.tipo.toLowerCase() === movimientoFiltroTipo.toLowerCase())
   )
 
-  // Cargar movimientos de una caja histórica seleccionada
   const cargarMovimientosCajaHist = async (caja: HistorialCaja) => {
     setCajaSeleccionada(caja)
     setDialogHistMovsOpen(true)
@@ -502,7 +558,6 @@ export default function CajaPage() {
       return
     }
     try {
-      // Endpoint recomendado: /api/cajas/{id}/movimientos
       const movs = await fetchWithToken(apiUrl(`/api/cajas/${caja.id}/movimientos`))
       if (Array.isArray(movs)) {
         setMovimientosCajaSeleccionada(movs)
@@ -513,9 +568,9 @@ export default function CajaPage() {
     } catch (e: any) {
       setMovimientosCajaSeleccionada([])
       toast({
-        title: "No se pudieron cargar los movimientos",
-        description: e?.message || "Verifica que exista el endpoint /api/cajas/{id}/movimientos",
-        variant: "destructive",
+        title: "Error cargando movimientos",
+        description: e?.message || "Endpoint /api/cajas/{id}/movimientos no disponible",
+        variant: "destructive"
       })
     } finally {
       setLoadingMovsCajaSeleccionada(false)
@@ -530,188 +585,254 @@ export default function CajaPage() {
     return "Sin caja activa"
   })()
 
+  /* -------------------------- Componentes internos UI ------------------------ */
+  function DiferenciaCierreCard({ diferencia }: { diferencia: number | undefined }) {
+    if (diferencia === undefined || diferencia === 0) return null
+    const esFaltante = diferencia < 0
+    return (
+      <motion.div
+        layout
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 8 }}
+      >
+        <Card
+          className={cn(
+            "relative overflow-hidden",
+            esFaltante
+              ? "border-red-500/60 bg-red-500/5"
+              : "border-emerald-500/60 bg-emerald-500/5"
+          )}
+        >
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(255,255,255,0.12),transparent_60%)]" />
+            <CardHeader className="flex flex-row items-center gap-2 pb-2">
+            <AlertTriangle
+              className={esFaltante ? "text-red-500" : "text-emerald-500"}
+            />
+            <CardTitle
+              className={cn(
+                "text-base",
+                esFaltante ? "text-red-500" : "text-emerald-500"
+              )}
+            >
+              {esFaltante ? "Faltante detectado" : "Sobrante detectado"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm">
+            {esFaltante
+              ? `Faltan S/ ${Math.abs(diferencia).toFixed(
+                  2
+                )} respecto al esperado.`
+              : `Sobran S/ ${Math.abs(diferencia).toFixed(
+                  2
+                )} respecto al esperado.`}
+          </CardContent>
+        </Card>
+      </motion.div>
+    )
+  }
+
+  const kpiGrid = (
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 relative">
+      <MetricCard
+        title="Efectivo actual"
+        icon={<DollarSign className="h-4 w-4" />}
+        value={resumen ? resumen.efectivo : null}
+        suffix="S/"
+        accent="from-emerald-500/25 to-emerald-500/5"
+        footer="Disponible en caja"
+      />
+      <MetricCard
+        title="Pagos Yape"
+        icon={<Calculator className="h-4 w-4" />}
+        value={resumen ? resumen.totalYape : null}
+        suffix="S/"
+        accent="from-cyan-500/25 to-cyan-500/5"
+        footer="Transacciones digitales"
+      />
+      <MetricCard
+        title="Ingresos"
+        icon={<TrendingUp className="h-4 w-4" />}
+        value={resumen ? resumen.ingresos : null}
+        suffix="S/"
+        positive
+        accent="from-blue-500/25 to-blue-500/5"
+        footer="Movimientos manuales"
+      />
+      <MetricCard
+        title="Egresos"
+        icon={<TrendingDown className="h-4 w-4" />}
+        value={resumen ? resumen.egresos : null}
+        suffix="S/"
+        negative
+        accent="from-red-500/25 to-red-500/5"
+        footer="Salidas registradas"
+      />
+    </section>
+  )
+
+  /* --------------------------------- Render ---------------------------------- */
   return (
-    <div className="flex flex-col gap-5">
-      {/* Alerta global */}
-      <AnimatePresence>
-        {alertaCajaAbierta && (
-          <motion.div
-            initial={{ opacity: 0, y: -16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -16 }}
-            className="mb-2"
-          >
-            <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-3 rounded-md flex items-center gap-2">
-              <AlertTriangle className="text-yellow-600" />
-              <span>¡Atención! Hay caja(s) abiertas pendientes de cierre.</span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div className="relative flex flex-col gap-8">
+      <BackgroundFX />
 
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Gestión de Caja</h1>
-          <p className="text-muted-foreground">
-            Administra la apertura, cierre y movimientos de caja
-          </p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <Button
-            variant="outline"
-            className="flex items-center gap-2"
-            onClick={refreshAll}
-            disabled={loading}
-            title="Refrescar datos"
-          >
-            <RefreshCcw
-              className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
-              style={{ animationPlayState: loading ? "running" : "paused" }}
-            />
-            Refrescar
-          </Button>
-          <div className="flex items-center gap-1">
-            <input
-              type="checkbox"
-              id="auto-refresh"
-              checked={autoRefresh}
-              onChange={e => setAutoRefresh(e.target.checked)}
-            />
-            <Label htmlFor="auto-refresh" className="cursor-pointer text-xs">
-              Auto-refresh
-            </Label>
+      {/* Header */}
+      <header className="relative z-10 space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary via-primary/70 to-primary/40 bg-clip-text text-transparent flex items-center gap-2">
+              Gestión de Caja
+              <Sparkles className="h-6 w-6 text-primary/70 animate-pulse" />
+            </h1>
+            <p className="text-sm text-muted-foreground flex items-center gap-1">
+              <Workflow className="h-4 w-4 text-primary/60" />
+              Control integral de apertura, movimientos y cierre
+            </p>
           </div>
-          <Badge
-            variant={cajaAbierta ? "default" : "secondary"}
-            className={cajaAbierta ? "bg-emerald-600" : "bg-red-600 text-white"}
-          >
-            {cajaAbierta ? "Caja Abierta" : "Caja Cerrada"}
-          </Badge>
+          <div className="flex items-center gap-3 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "gap-2",
+                autoRefresh && "border-primary/50 bg-primary/10 text-primary"
+              )}
+              onClick={() => setAutoRefresh(a => !a)}
+            >
+              <RefreshCcw
+                className={cn(
+                  "h-4 w-4",
+                  autoRefresh && "animate-spin-slow motion-reduce:animate-none"
+                )}
+              />
+              Auto {autoRefresh ? "ON" : "OFF"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={loading}
+              onClick={refreshAll}
+              className="gap-2"
+            >
+              <Rocket className={cn("h-4 w-4", loading && "animate-spin")} />
+              Refrescar
+            </Button>
+            <Badge
+              variant={cajaAbierta ? "secondary" : "outline"}
+              className={cn(
+                "px-3 py-1.5 rounded-full text-xs font-semibold tracking-wide",
+                cajaAbierta
+                  ? "bg-emerald-600 text-white"
+                  : "bg-red-600 text-white border-red-600"
+              )}
+            >
+              {cajaAbierta ? "CAJA ABIERTA" : "CAJA CERRADA"}
+            </Badge>
+          </div>
         </div>
-      </div>
 
-      {error && (
-        <div className="bg-red-100 border-l-4 border-red-500 text-red-800 p-3 rounded-md">
-          {error}
-        </div>
-      )}
+        <AnimatePresence>
+          {alertaCajaAbierta && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="relative"
+            >
+              <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-gradient-to-r from-amber-500/15 to-amber-500/5 px-4 py-2 text-sm text-amber-800 dark:text-amber-200 backdrop-blur">
+                <Flame className="h-4 w-4 text-amber-500" />
+                Existen otras cajas abiertas pendientes de cierre.
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-      {/* Cards resumen */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Efectivo en caja</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              S/ {resumen ? resumen.efectivo.toFixed(2) : "--"}
-            </div>
-            <p className="text-xs text-muted-foreground">Efectivo disponible</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Yape</CardTitle>
-            <Calculator className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              S/ {resumen ? resumen.totalYape.toFixed(2) : "--"}
-            </div>
-            <p className="text-xs text-muted-foreground">Pagos Yape</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Ingresos del día</CardTitle>
-            <TrendingUp className="h-4 w-4 text-emerald-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-emerald-600">
-              S/ {resumen ? resumen.ingresos.toFixed(2) : "--"}
-            </div>
-            <p className="text-xs text-muted-foreground">Total de ingresos</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Egresos del día</CardTitle>
-            <TrendingDown className="h-4 w-4 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              S/ {resumen ? resumen.egresos.toFixed(2) : "--"}
-            </div>
-            <p className="text-xs text-muted-foreground">Total de egresos</p>
-          </CardContent>
-        </Card>
-      </div>
+        {error && (
+          <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400">
+            {error}
+          </div>
+        )}
+      </header>
 
-      <Tabs defaultValue="movimientos" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="estado">Estado de Caja</TabsTrigger>
-          <TabsTrigger value="movimientos">Movimientos</TabsTrigger>
-          <TabsTrigger value="historial">Historial</TabsTrigger>
-          <TabsTrigger value="resumen">Resumen Diario</TabsTrigger>
+      {/* KPIs */}
+      {kpiGrid}
+
+      {/* Tabs */}
+      <Tabs defaultValue="movimientos" className="space-y-6 relative z-10">
+        <TabsList className="w-full justify-start gap-2 bg-muted/30 backdrop-blur rounded-xl p-1">
+          <FancyTab value="estado" icon={<ShieldCheck className="h-4 w-4" />}>
+            Estado
+          </FancyTab>
+          <FancyTab value="movimientos" icon={<Layers className="h-4 w-4" />}>
+            Movimientos
+          </FancyTab>
+          <FancyTab value="historial" icon={<History className="h-4 w-4" />}>
+            Historial
+          </FancyTab>
+          <FancyTab value="resumen" icon={<LibraryBig className="h-4 w-4" />}>
+            Resumen
+          </FancyTab>
         </TabsList>
 
-        {/* Estado */}
-        <TabsContent value="estado" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Apertura de Caja</CardTitle>
+        {/* ESTADO */}
+        <TabsContent value="estado" className="space-y-6 focus-visible:outline-none">
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Apertura */}
+            <GlassPanel>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Zap className="h-5 w-5 text-primary" />
+                  Apertura de Caja
+                </CardTitle>
                 <CardDescription>Registra el efectivo inicial</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-5">
                 <div className="space-y-2">
-                  <Label>Efectivo inicial</Label>
+                  <Label className="text-xs font-medium">Efectivo inicial</Label>
                   <Input
+                    inputMode="decimal"
                     type="number"
                     step="0.01"
                     min={0}
                     value={efectivoInicial}
                     onChange={e => setEfectivoInicial(e.target.value)}
                     disabled={cajaAbierta || loading}
+                    className="bg-background/60 backdrop-blur"
                   />
                 </div>
-                <Button onClick={abrirCaja} disabled={cajaAbierta || loading} className="w-full">
-                  {cajaAbierta ? "Caja ya abierta" : loading ? "Abriendo..." : "Abrir Caja"}
+                <Button
+                  onClick={abrirCaja}
+                  disabled={cajaAbierta || loading}
+                  className="w-full"
+                >
+                  {cajaAbierta ? "Caja ya abierta" : loading ? "Procesando..." : "Abrir Caja"}
                 </Button>
               </CardContent>
-            </Card>
+            </GlassPanel>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Cierre de Caja</CardTitle>
+            {/* Cierre */}
+            <GlassPanel>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Clock8 className="h-5 w-5 text-primary" />
+                  Cierre de Caja
+                </CardTitle>
                 <CardDescription>Finaliza la caja actual</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span>Ef. inicial:</span>
-                    <span>S/ {resumen ? resumen.efectivoInicial.toFixed(2) : "--"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Ingresos man.:</span>
-                    <span>+S/ {resumen ? resumen.ingresos.toFixed(2) : "--"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Ventas efec.:</span>
-                    <span>+S/ {resumen ? resumen.ventasEfectivo.toFixed(2) : "--"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Egresos:</span>
-                    <span className="text-red-600">-S/ {resumen ? resumen.egresos.toFixed(2) : "--"}</span>
-                  </div>
-                  <div className="flex justify-between font-bold">
-                    <span>Ef. esperado:</span>
+              <CardContent className="space-y-6">
+                <div className="rounded-lg border bg-background/50 backdrop-blur p-3 text-xs space-y-2">
+                  <Row label="Efectivo inicial" value={resumen?.efectivoInicial} />
+                  <Row label="Ingresos manuales" value={resumen?.ingresos} sign="+" color="text-emerald-500" />
+                  <Row label="Ventas efectivo" value={resumen?.ventasEfectivo} sign="+" color="text-emerald-500" />
+                  <Row label="Egresos" value={resumen?.egresos} sign="-" color="text-red-500" />
+                  <div className="flex justify-between font-semibold pt-1 border-t">
+                    <span>Esperado:</span>
                     <span>S/ {calcularEfectivoEsperado()}</span>
                   </div>
                 </div>
+
                 <div className="space-y-2">
-                  <Label>Efectivo contado</Label>
+                  <Label className="text-xs font-medium">Efectivo contado</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -719,6 +840,7 @@ export default function CajaPage() {
                     value={efectivoFinalDeclarado}
                     onChange={e => setEfectivoFinalDeclarado(e.target.value)}
                     disabled={!cajaAbierta || loading}
+                    className="bg-background/60 backdrop-blur"
                   />
                 </div>
                 <Button
@@ -729,28 +851,36 @@ export default function CajaPage() {
                 >
                   {!cajaAbierta ? "Caja cerrada" : loading ? "Cerrando..." : "Cerrar Caja"}
                 </Button>
-                <DiferenciaCierreCard diferencia={resumen?.diferencia} />
+                {/* Mostrar diferencia sólo: preview durante caja abierta (si hay efectivo contado) o diferencia oficial tras cierre */}
+                <DiferenciaCierreCard
+                  diferencia={
+                    cajaAbierta
+                      ? diferenciaPreview
+                      : resumen?.diferencia
+                  }
+                />
               </CardContent>
-            </Card>
+            </GlassPanel>
           </div>
         </TabsContent>
 
-        {/* Movimientos */}
-        <TabsContent value="movimientos" className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+        {/* MOVIMIENTOS */}
+        <TabsContent value="movimientos" className="space-y-6">
+          <GlassPanel>
+            <CardHeader className="pb-4">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
                 <div>
-                  <CardTitle>Movimientos de Efectivo</CardTitle>
-                  <CardDescription>
+                  <CardTitle className="flex items-center gap-2">
+                    Movimientos de Efectivo
+                  </CardTitle>
+                  <CardDescription className="text-xs">
                     {etiquetaOrigenMovimientos}
                   </CardDescription>
                 </div>
-                <div className="flex flex-col md:flex-row items-center gap-2">
+                <div className="flex flex-wrap items-center gap-3">
                   <Input
-                    type="text"
                     placeholder="Buscar usuario / descripción..."
-                    className="w-52"
+                    className="w-56 bg-background/50 backdrop-blur"
                     value={movimientoSearch}
                     onChange={e => setMovimientoSearch(e.target.value)}
                   />
@@ -758,7 +888,7 @@ export default function CajaPage() {
                     value={movimientoFiltroTipo || "todos"}
                     onValueChange={v => setMovimientoFiltroTipo(v === "todos" ? "" : v)}
                   >
-                    <SelectTrigger className="w-32">
+                    <SelectTrigger className="w-36 bg-background/50 backdrop-blur">
                       <SelectValue placeholder="Tipo" />
                     </SelectTrigger>
                     <SelectContent>
@@ -767,24 +897,29 @@ export default function CajaPage() {
                       <SelectItem value="egreso">Egreso</SelectItem>
                     </SelectContent>
                   </Select>
+
                   <Dialog>
                     <DialogTrigger asChild>
-                      <Button disabled={!cajaAbierta}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Nuevo Movimiento
+                      <Button disabled={!cajaAbierta} className="gap-2">
+                        <Plus className="h-4 w-4" />
+                        Nuevo
                       </Button>
                     </DialogTrigger>
-                    <DialogContent>
+                    <DialogContent className="max-w-md">
                       <DialogHeader>
                         <DialogTitle>Nuevo Movimiento</DialogTitle>
-                        <DialogDescription>Registra un nuevo movimiento</DialogDescription>
+                        <DialogDescription>
+                          Registra un ingreso o egreso (monto ≥ 0.01).
+                        </DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4">
-                        <div className="space-y-2">
+                        <div className="space-y-2 text-sm">
                           <Label>Tipo</Label>
                           <Select
                             value={nuevoMovimiento.tipo}
-                            onValueChange={value => setNuevoMovimiento({ ...nuevoMovimiento, tipo: value })}
+                            onValueChange={v =>
+                              setNuevoMovimiento({ ...nuevoMovimiento, tipo: v })
+                            }
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Selecciona tipo" />
@@ -795,91 +930,130 @@ export default function CajaPage() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="space-y-2">
+                        <div className="space-y-2 text-sm">
                           <Label>Monto</Label>
                           <Input
                             type="number"
-                            min={0.01}
                             step="0.01"
+                            min={0.01}
                             value={nuevoMovimiento.monto}
-                            onChange={e => setNuevoMovimiento({ ...nuevoMovimiento, monto: e.target.value })}
+                            onChange={e =>
+                              setNuevoMovimiento({
+                                ...nuevoMovimiento,
+                                monto: e.target.value
+                              })
+                            }
                           />
                         </div>
-                        <div className="space-y-2">
+                        <div className="space-y-2 text-sm">
                           <Label>Descripción</Label>
                           <Textarea
+                            rows={3}
                             value={nuevoMovimiento.descripcion}
-                            onChange={e => setNuevoMovimiento({ ...nuevoMovimiento, descripcion: e.target.value })}
-                            placeholder="Motivo"
+                            onChange={e =>
+                              setNuevoMovimiento({
+                                ...nuevoMovimiento,
+                                descripcion: e.target.value
+                              })
+                            }
+                            placeholder="Motivo / detalle"
                           />
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button onClick={handleAgregarMovimiento}>Registrar</Button>
+                        <Button onClick={handleAgregarMovimiento} className="w-full">
+                          Registrar
+                        </Button>
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
                 </div>
               </div>
             </CardHeader>
+
             <CardContent>
-              <div className="rounded-md border overflow-x-auto">
-                <Table className="min-w-[740px]">
-                  <TableHeader className="sticky top-0 bg-background z-10">
+              <div className="rounded-xl border bg-background/50 backdrop-blur overflow-x-auto relative shadow-inner">
+                <Table className="min-w-[760px]">
+                  <TableHeader className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm">
                     <TableRow>
-                      <TableHead>Fecha/Hora</TableHead>
+                      <TableHead className="whitespace-nowrap">Fecha / Hora</TableHead>
                       <TableHead>Tipo</TableHead>
                       <TableHead>Descripción</TableHead>
-                      <TableHead>Monto</TableHead>
+                      <TableHead className="text-right">Monto</TableHead>
                       <TableHead>Usuario</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {movimientosFiltrados.length === 0 ? (
+                    {movimientosFiltrados.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground">
-                          No hay movimientos registrados.
+                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                          No hay movimientos que coincidan.
                         </TableCell>
                       </TableRow>
-                    ) : movimientosFiltrados.map(mov => (
-                      <TableRow key={mov.id}>
-                        <TableCell>{mov.fecha}</TableCell>
+                    )}
+                    {movimientosFiltrados.map(mov => (
+                      <motion.tr
+                        key={mov.id}
+                        layout
+                        className="group border-b last:border-b-0 data-[state=open]:bg-muted/40 hover:bg-muted/30"
+                      >
+                        <TableCell className="py-2 text-xs md:text-sm">
+                          {mov.fecha}
+                        </TableCell>
                         <TableCell>
-                          <Badge className={mov.tipo.toLowerCase() === "ingreso" ? "bg-emerald-500" : "bg-red-500"}>
-                            {mov.tipo.toLowerCase() === "ingreso" ? (
-                              <ArrowUpIcon className="mr-1 h-3 w-3" />
-                            ) : (
-                              <ArrowDownIcon className="mr-1 h-3 w-3" />
+                          <Badge
+                            className={cn(
+                              "gap-1",
+                              mov.tipo.toLowerCase() === "ingreso"
+                                ? "bg-emerald-500 hover:bg-emerald-500"
+                                : "bg-red-500 hover:bg-red-500"
                             )}
-                            {mov.tipo.charAt(0).toUpperCase() + mov.tipo.slice(1).toLowerCase()}
+                          >
+                            {mov.tipo.toLowerCase() === "ingreso" ? (
+                              <ArrowUpIcon className="h-3 w-3" />
+                            ) : (
+                              <ArrowDownIcon className="h-3 w-3" />
+                            )}
+                            {mov.tipo.charAt(0).toUpperCase() +
+                              mov.tipo.slice(1).toLowerCase()}
                           </Badge>
                         </TableCell>
-                        <TableCell>{mov.descripcion}</TableCell>
-                        <TableCell>S/ {mov.monto.toFixed(2)}</TableCell>
-                        <TableCell>
+                        <TableCell className="max-w-[280px] truncate">
+                          {mov.descripcion}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          S/ {mov.monto.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-xs">
                           {typeof mov.usuario === "string"
                             ? mov.usuario
                             : (mov.usuario as any)?.nombreCompleto || ""}
                         </TableCell>
-                      </TableRow>
+                      </motion.tr>
                     ))}
                   </TableBody>
                 </Table>
               </div>
             </CardContent>
-          </Card>
+          </GlassPanel>
         </TabsContent>
 
-        {/* Historial */}
-        <TabsContent value="historial" className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+        {/* HISTORIAL */}
+        <TabsContent value="historial" className="space-y-6">
+          <GlassPanel>
+            <CardHeader className="pb-4">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
                 <div>
-                  <CardTitle>Historial de Cajas</CardTitle>
-                  <CardDescription>Ver aperturas y cierres (más recientes primero)</CardDescription>
+                  <CardTitle className="flex items-center gap-2">
+                    <History className="h-5 w-5 text-primary" />
+                    Historial de Cajas
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Aperturas y cierres ordenados del más reciente al más antiguo
+                  </CardDescription>
                 </div>
-                <div className="flex items-center gap-3 flex-wrap">
+
+                <div className="flex items-center gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
                     <Label className="text-xs">Tamaño</Label>
                     <Select
@@ -889,258 +1063,345 @@ export default function CajaPage() {
                         setHistPage(1)
                       }}
                     >
-                      <SelectTrigger className="h-8 w-[90px]">
+                      <SelectTrigger className="h-8 w-[90px] bg-background/50 backdrop-blur">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {[5, 10, 25, 50].map(n => (
-                          <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                          <SelectItem key={n} value={String(n)}>
+                            {n}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    Mostrando{" "}
-                    {totalHistorial === 0
+                    {(totalHistorial === 0
                       ? "0"
-                      : `${(histPage - 1) * histPageSize + 1}–${Math.min(histPage * histPageSize, totalHistorial)}`}{" "}
-                    de {totalHistorial}
+                      : `${(histPage - 1) * histPageSize + 1}–${Math.min(
+                          histPage * histPageSize,
+                          totalHistorial
+                        )}`) + ` de ${totalHistorial}`}
                   </div>
                 </div>
               </div>
             </CardHeader>
+
             <CardContent>
-              <div className="rounded-md border overflow-x-auto">
-                <Table className="min-w-[1050px]">
-                  <TableHeader className="sticky top-0 bg-background z-10">
+              <div className="rounded-xl border bg-background/50 backdrop-blur overflow-x-auto shadow-inner">
+                <Table className="min-w-[1080px]">
+                  <TableHeader className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm">
                     <TableRow>
-                      <TableHead>Fecha Apertura</TableHead>
-                      <TableHead>Fecha Cierre</TableHead>
+                      <TableHead>Apertura</TableHead>
+                      <TableHead>Cierre</TableHead>
                       <TableHead>Responsable</TableHead>
-                      <TableHead>Efectivo Inicial</TableHead>
-                      <TableHead>Efectivo Final</TableHead>
+                      <TableHead>Ef. Inicial</TableHead>
+                      <TableHead>Ef. Final</TableHead>
                       <TableHead>Diferencia</TableHead>
                       <TableHead>Yape</TableHead>
                       <TableHead>Estado</TableHead>
-                      <TableHead>Movs</TableHead>
+                      <TableHead>Ver</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {historialPageItems.length === 0 ? (
+                    {historialPageItems.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center text-muted-foreground">
-                          Sin registros
+                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                          Sin registros.
                         </TableCell>
                       </TableRow>
-                    ) : historialPageItems.map(caja => (
-                      <TableRow key={caja._key}>
-                        <TableCell>{new Date(caja.fechaApertura).toLocaleString()}</TableCell>
-                        <TableCell>
-                          {caja.fechaCierre
-                            ? new Date(caja.fechaCierre).toLocaleString()
-                            : <span className="text-yellow-600">Abierta</span>}
-                        </TableCell>
-                        <TableCell>{caja.usuarioResponsable}</TableCell>
-                        <TableCell>S/ {caja.efectivoInicial.toFixed(2)}</TableCell>
-                        <TableCell>
-                          {caja.efectivoFinal != null ? `S/ ${caja.efectivoFinal.toFixed(2)}` : "--"}
-                        </TableCell>
-                        <TableCell className={
-                          caja.diferencia && caja.diferencia < 0
-                            ? "text-red-600"
-                            : caja.diferencia && caja.diferencia > 0
-                              ? "text-emerald-600"
-                              : ""
-                        }>
-                          {caja.diferencia != null ? `S/ ${caja.diferencia.toFixed(2)}` : "--"}
-                        </TableCell>
-                        <TableCell>
-                          S/ {caja.totalYape != null ? caja.totalYape.toFixed(2) : "--"}
-                        </TableCell>
-                        <TableCell>
-                          {caja.fechaCierre
-                            ? <Badge className="bg-red-600 text-white">Cerrada</Badge>
-                            : <Badge className="bg-emerald-600">Abierta</Badge>}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => cargarMovimientosCajaHist(caja)}
+                    )}
+                    {historialPageItems.map(caja => {
+                      const diff = caja.diferencia
+                      return (
+                        <TableRow
+                          key={caja._key}
+                          className="hover:bg-muted/30 transition-colors"
+                        >
+                          <TableCell className="text-xs md:text-sm">
+                            {new Date(caja.fechaApertura).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-xs md:text-sm">
+                            {caja.fechaCierre ? (
+                              new Date(caja.fechaCierre).toLocaleString()
+                            ) : (
+                              <span className="text-amber-500 font-medium">
+                                Abierta
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs md:text-sm">
+                            {caja.usuarioResponsable}
+                          </TableCell>
+                          <TableCell className="tabular-nums">
+                            S/ {caja.efectivoInicial.toFixed(2)}
+                          </TableCell>
+                          <TableCell className="tabular-nums">
+                            {caja.efectivoFinal != null
+                              ? "S/ " + caja.efectivoFinal.toFixed(2)
+                              : "—"}
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              "tabular-nums",
+                              diff && diff < 0
+                                ? "text-red-500"
+                                : diff && diff > 0
+                                ? "text-emerald-500"
+                                : ""
+                            )}
                           >
-                            <Eye className="w-4 h-4 mr-1" />
-                            Ver
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                            {diff != null ? "S/ " + diff.toFixed(2) : "—"}
+                          </TableCell>
+                          <TableCell className="tabular-nums">
+                            S/ {caja.totalYape.toFixed(2)}
+                          </TableCell>
+                          <TableCell>
+                            {caja.fechaCierre ? (
+                              <Badge className="bg-red-600">Cerrada</Badge>
+                            ) : (
+                              <Badge className="bg-emerald-600">Abierta</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="gap-1"
+                              onClick={() => cargarMovimientosCajaHist(caja)}
+                            >
+                              <Eye className="h-4 w-4" />
+                              Ver
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               </div>
 
-              {/* Paginación */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4">
-                <div className="text-xs text-muted-foreground">
-                  Página {histPage} de {totalHistPages}
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={histPage === 1}
-                    onClick={() => setHistPage(1)}
-                  >
-                    « Primero
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={histPage === 1}
-                    onClick={() => setHistPage(p => Math.max(1, p - 1))}
-                  >
-                    Anterior
-                  </Button>
-                  <div className="flex items-center gap-1">
+              {totalHistorial > histPageSize && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
+                  <div className="text-xs text-muted-foreground">
+                    Página {histPage} de {totalHistPages}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={histPage === 1}
+                      onClick={() => setHistPage(1)}
+                    >
+                      «
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={histPage === 1}
+                      onClick={() => setHistPage(p => Math.max(1, p - 1))}
+                    >
+                      Prev
+                    </Button>
                     <Input
-                      className="w-16 h-8"
+                      className="w-16 h-8 text-center"
                       type="number"
                       min={1}
                       max={totalHistPages}
                       value={histPage}
                       onChange={e => {
-                        const val = Number(e.target.value)
-                        if (!Number.isNaN(val)) {
-                          setHistPage(Math.min(Math.max(1, val), totalHistPages))
+                        const v = Number(e.target.value)
+                        if (!Number.isNaN(v)) {
+                          setHistPage(Math.min(Math.max(1, v), totalHistPages))
                         }
                       }}
                     />
-                    <span className="text-xs text-muted-foreground">/ {totalHistPages}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={histPage === totalHistPages}
+                      onClick={() =>
+                        setHistPage(p => Math.min(totalHistPages, p + 1))
+                      }
+                    >
+                      Next
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={histPage === totalHistPages}
+                      onClick={() => setHistPage(totalHistPages)}
+                    >
+                      »
+                    </Button>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={histPage === totalHistPages}
-                    onClick={() => setHistPage(p => Math.min(totalHistPages, p + 1))}
-                  >
-                    Siguiente
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={histPage === totalHistPages}
-                    onClick={() => setHistPage(totalHistPages)}
-                  >
-                    Último »
-                  </Button>
                 </div>
-              </div>
+              )}
             </CardContent>
-          </Card>
+          </GlassPanel>
         </TabsContent>
 
-        {/* Resumen diario */}
-        <TabsContent value="resumen" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Resumen Diario de Caja</CardTitle>
-              <CardDescription>Operaciones del día</CardDescription>
+        {/* RESUMEN */}
+        <TabsContent value="resumen" className="space-y-6">
+          <GlassPanel>
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-2">
+                <Gauge className="h-5 w-5 text-primary" />
+                Resumen Diario
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Consolidado de operaciones del día
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-6 md:grid-cols-2">
-                <div className="space-y-4">
-                  <h3 className="font-semibold">Movimientos de Efectivo</h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span>Efectivo inicial:</span>
-                      <span>S/ {resumen ? resumen.efectivoInicial.toFixed(2) : "--"}</span>
-                    </div>
-                    <div className="flex justify-between text-emerald-600">
-                      <span>Total ingresos manuales:</span>
-                      <span>+S/ {resumen ? resumen.ingresos.toFixed(2) : "--"}</span>
-                    </div>
-                    <div className="flex justify-between text-emerald-600">
-                      <span>Ventas en efectivo:</span>
-                      <span>+S/ {resumen ? resumen.ventasEfectivo.toFixed(2) : "--"}</span>
-                    </div>
-                    <div className="flex justify-between text-red-600">
-                      <span>Total egresos:</span>
-                      <span>-S/ {resumen ? resumen.egresos.toFixed(2) : "--"}</span>
-                    </div>
-                    <div className="border-t pt-2 flex justify-between font-bold">
-                      <span>Ef. final esperado:</span>
-                      <span>S/ {calcularEfectivoEsperado()}</span>
-                    </div>
+              <div className="grid gap-8 md:grid-cols-2">
+                <div className="space-y-5">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-sm tracking-wide uppercase text-muted-foreground">
+                      Movimientos y efectivo
+                    </h3>
                   </div>
+                  <MetricList>
+                    <MetricRow label="Efectivo inicial" value={resumen?.efectivoInicial} />
+                    <MetricRow
+                      label="Ingresos manuales"
+                      value={resumen?.ingresos}
+                      positive
+                    />
+                    <MetricRow
+                      label="Ventas en efectivo"
+                      value={resumen?.ventasEfectivo}
+                      positive
+                    />
+                    <MetricRow
+                      label="Egresos"
+                      value={resumen?.egresos}
+                      negative
+                    />
+                    <MetricRow
+                      label="Efectivo esperado"
+                      value={efectivoEsperadoNum}
+                      bold
+                    />
+                  </MetricList>
                 </div>
-                <div className="space-y-4">
-                  <h3 className="font-semibold">Ventas por Método</h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span>Efectivo:</span>
-                      <span>S/ {resumen ? resumen.ventasEfectivo.toFixed(2) : "--"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Yape:</span>
-                      <span>S/ {resumen ? resumen.totalYape.toFixed(2) : "--"}</span>
-                    </div>
-                    <div className="border-t pt-2 flex justify-between font-bold">
-                      <span>Total ventas:</span>
-                      <span>S/ {resumen ? resumen.totalVentas.toFixed(2) : "--"}</span>
-                    </div>
+
+                <div className="space-y-5">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-sm tracking-wide uppercase text-muted-foreground">
+                      Ventas por método
+                    </h3>
                   </div>
+                  <MetricList>
+                    <MetricRow
+                      label="Ventas efectivo"
+                      value={resumen?.ventasEfectivo}
+                      positive
+                    />
+                    <MetricRow
+                      label="Pagos Yape"
+                      value={resumen?.totalYape}
+                      accent="cyan"
+                    />
+                    <MetricRow
+                      label="Total ventas"
+                      value={resumen?.totalVentas}
+                      bold
+                    />
+                  </MetricList>
                 </div>
               </div>
             </CardContent>
-          </Card>
+          </GlassPanel>
         </TabsContent>
       </Tabs>
 
-      {/* Confirmar cierre */}
+      {/* Dialogs */}
       <Dialog open={confirmCerrar} onOpenChange={setConfirmCerrar}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>¿Cerrar caja?</DialogTitle>
-            <DialogDescription>Esta acción no se puede deshacer.</DialogDescription>
+            <DialogDescription>
+              Esta acción registrará el cierre definitivo.
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmCerrar(false)}>Cancelar</Button>
-            <Button variant="destructive" onClick={confirmarCerrarCaja}>Sí, cerrar</Button>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmCerrar(false)}
+              disabled={loading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmarCerrarCaja}
+              disabled={loading}
+            >
+              Confirmar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Confirmar movimiento grande */}
       <Dialog open={confirmMovimiento} onOpenChange={setConfirmMovimiento}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confirmar movimiento grande</DialogTitle>
-            <DialogDescription>El monto es elevado. ¿Continuar?</DialogDescription>
+            <DialogTitle>Movimiento de alto valor</DialogTitle>
+            <DialogDescription>
+              El monto supera el umbral de revisión. ¿Deseas continuar?
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmMovimiento(false)}>Cancelar</Button>
-            <Button variant="destructive" onClick={confirmarAgregarMovimiento}>Sí, registrar</Button>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmMovimiento(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmarAgregarMovimiento}
+            >
+              Registrar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog movimientos de caja histórica */}
-      <Dialog open={dialogHistMovsOpen} onOpenChange={o => { setDialogHistMovsOpen(o); if (!o) { setCajaSeleccionada(null); setMovimientosCajaSeleccionada(null) } }}>
+      <Dialog
+        open={dialogHistMovsOpen}
+        onOpenChange={o => {
+          setDialogHistMovsOpen(o)
+          if (!o) {
+            setCajaSeleccionada(null)
+            setMovimientosCajaSeleccionada(null)
+          }
+        }}
+      >
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>
-              Movimientos de Caja #{cajaSeleccionada?.id}
+              Movimientos Caja #{cajaSeleccionada?.id ?? "—"}
             </DialogTitle>
             <DialogDescription>
               {cajaSeleccionada
-                ? `Apertura: ${new Date(cajaSeleccionada.fechaApertura).toLocaleString()} ${
-                    cajaSeleccionada.fechaCierre ? " | Cierre: " + new Date(cajaSeleccionada.fechaCierre).toLocaleString() : ""
+                ? `Apertura: ${new Date(
+                    cajaSeleccionada.fechaApertura
+                  ).toLocaleString()}${
+                    cajaSeleccionada.fechaCierre
+                      ? " | Cierre: " +
+                        new Date(
+                          cajaSeleccionada.fechaCierre
+                        ).toLocaleString()
+                      : ""
                   }`
                 : "Selecciona una caja del historial"}
             </DialogDescription>
           </DialogHeader>
-          <div className="border rounded-md max-h-[55vh] overflow-auto">
+          <div className="rounded-lg border bg-background/60 backdrop-blur max-h-[55vh] overflow-auto">
             <Table className="min-w-[720px]">
-              <TableHeader>
+              <TableHeader className="sticky top-0 bg-background/80 backdrop-blur-sm">
                 <TableRow>
                   <TableHead>Fecha/Hora</TableHead>
                   <TableHead>Tipo</TableHead>
@@ -1150,52 +1411,282 @@ export default function CajaPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loadingMovsCajaSeleccionada ? (
+                {loadingMovsCajaSeleccionada && (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    <TableCell
+                      colSpan={5}
+                      className="text-center py-6 text-muted-foreground"
+                    >
                       Cargando movimientos...
                     </TableCell>
                   </TableRow>
-                ) : movimientosCajaSeleccionada == null ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
-                      Selecciona una caja.
-                    </TableCell>
-                  </TableRow>
-                ) : movimientosCajaSeleccionada.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
-                      Sin movimientos registrados en esta caja.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  movimientosCajaSeleccionada.map(m => (
-                    <TableRow key={m.id}>
-                      <TableCell>{m.fecha}</TableCell>
-                      <TableCell>
-                        <Badge className={m.tipo.toLowerCase() === "ingreso" ? "bg-emerald-500" : "bg-red-500"}>
-                          {m.tipo.toLowerCase() === "ingreso" ? (
-                            <ArrowUpIcon className="mr-1 h-3 w-3" />
-                          ) : (
-                            <ArrowDownIcon className="mr-1 h-3 w-3" />
-                          )}
-                          {m.tipo}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{m.descripcion}</TableCell>
-                      <TableCell>S/ {m.monto.toFixed(2)}</TableCell>
-                      <TableCell>{m.usuario}</TableCell>
-                    </TableRow>
-                  ))
                 )}
+                {!loadingMovsCajaSeleccionada &&
+                  movimientosCajaSeleccionada == null && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={5}
+                        className="text-center py-6 text-muted-foreground"
+                      >
+                        Selecciona una caja.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                {!loadingMovsCajaSeleccionada &&
+                  movimientosCajaSeleccionada?.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={5}
+                        className="text-center py-6 text-muted-foreground"
+                      >
+                        Sin movimientos.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                {movimientosCajaSeleccionada?.map(m => (
+                  <TableRow key={m.id}>
+                    <TableCell className="text-xs md:text-sm">
+                      {m.fecha}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        className={cn(
+                          "gap-1",
+                          m.tipo.toLowerCase() === "ingreso"
+                            ? "bg-emerald-500"
+                            : "bg-red-500"
+                        )}
+                      >
+                        {m.tipo.toLowerCase() === "ingreso" ? (
+                          <ArrowUpIcon className="h-3 w-3" />
+                        ) : (
+                          <ArrowDownIcon className="h-3 w-3" />
+                        )}
+                        {m.tipo}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="max-w-[240px] truncate">
+                      {m.descripcion}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      S/ {m.monto.toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-xs">{m.usuario}</TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogHistMovsOpen(false)}>Cerrar</Button>
+            <Button
+              variant="outline"
+              onClick={() => setDialogHistMovsOpen(false)}
+            >
+              Cerrar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/*                            Subcomponentes UI                               */
+/* -------------------------------------------------------------------------- */
+function Row({
+  label,
+  value,
+  sign,
+  color
+}: {
+  label: string
+  value: number | undefined
+  sign?: string
+  color?: string
+}) {
+  return (
+    <div className="flex justify-between">
+      <span>{label}:</span>
+      <span className={cn("tabular-nums font-medium", color)}>
+        {value != null ? `${sign || ""}S/ ${value.toFixed(2)}` : "--"}
+      </span>
+    </div>
+  )
+}
+
+interface MetricCardProps {
+  title: string
+  value: number | null
+  icon: React.ReactNode
+  suffix?: string
+  accent?: string
+  footer?: string
+  positive?: boolean
+  negative?: boolean
+}
+function MetricCard({
+  title,
+  value,
+  icon,
+  suffix = "",
+  accent,
+  footer,
+  positive,
+  negative
+}: MetricCardProps) {
+  return (
+    <motion.div
+      layout
+      whileHover={{ y: -4 }}
+      transition={{ type: "spring", stiffness: 240, damping: 18 }}
+    >
+      <Card
+        className={cn(
+          "relative overflow-hidden border-border/50 bg-background/60 backdrop-blur group",
+          "transition-shadow",
+          "hover:shadow-[0_0_0_1px_hsl(var(--primary)/0.3),0_8px_30px_-10px_hsl(var(--primary)/0.4)]"
+        )}
+      >
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-0 opacity-70",
+            "bg-gradient-to-br",
+            accent || "from-primary/20 to-primary/5"
+          )}
+        />
+        <CardHeader className="flex flex-row items-start justify-between pb-2 relative z-10">
+          <div className="space-y-0.5">
+            <CardTitle className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              {title}
+            </CardTitle>
+            {footer && (
+              <p className="text-[10px] text-muted-foreground/70 uppercase">
+                {footer}
+              </p>
+            )}
+          </div>
+          <div
+            className={cn(
+              "p-2 rounded-md bg-background/60 border border-border/50 text-primary",
+              "shadow-inner"
+            )}
+          >
+            {icon}
+          </div>
+        </CardHeader>
+        <CardContent className="relative z-10">
+          <div
+            className={cn(
+              "text-2xl font-bold tabular-nums",
+              positive && "text-emerald-500",
+              negative && "text-red-500"
+            )}
+          >
+            {value != null ? `${suffix} ${value.toFixed(2)}` : "--"}
+          </div>
+        </CardContent>
+        <div className="pointer-events-none absolute -bottom-8 -right-8 h-32 w-32 rounded-full bg-primary/15 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity" />
+      </Card>
+    </motion.div>
+  )
+}
+
+function FancyTab({
+  value,
+  children,
+  icon
+}: {
+  value: string
+  children: React.ReactNode
+  icon?: React.ReactNode
+}) {
+  return (
+    <TabsTrigger
+      value={value}
+      className={cn(
+        "relative px-4 py-2 rounded-md text-xs font-medium flex items-center gap-2",
+        "data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary/30 data-[state=active]:to-primary/10",
+        "data-[state=active]:text-primary shadow-none",
+        "transition-all hover:bg-muted/50"
+      )}
+    >
+      {icon}
+      {children}
+    </TabsTrigger>
+  )
+}
+
+function GlassPanel({ children }: { children: React.ReactNode }) {
+  return (
+    <Card className="relative overflow-hidden border-border/60 bg-background/60 backdrop-blur-xl">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_10%,hsl(var(--primary)/0.18),transparent_55%),radial-gradient(circle_at_90%_80%,hsl(var(--secondary)/0.18),transparent_60%)] opacity-40" />
+      <div className="relative z-10">{children}</div>
+    </Card>
+  )
+}
+
+function MetricList({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border bg-background/50 backdrop-blur p-4 space-y-2 text-xs">
+      {children}
+    </div>
+  )
+}
+
+function MetricRow({
+  label,
+  value,
+  positive,
+  negative,
+  accent,
+  bold
+}: {
+  label: string
+  value: number | undefined
+  positive?: boolean
+  negative?: boolean
+  accent?: "cyan" | "blue" | "purple"
+  bold?: boolean
+}) {
+  const color =
+    positive
+      ? "text-emerald-500"
+      : negative
+      ? "text-red-500"
+      : accent === "cyan"
+      ? "text-cyan-500"
+      : accent === "blue"
+      ? "text-blue-500"
+      : accent === "purple"
+      ? "text-purple-500"
+      : "text-foreground"
+  return (
+    <div className="flex justify-between">
+      <span className="text-muted-foreground">{label}</span>
+      <span
+        className={cn(
+          "tabular-nums",
+          color,
+          bold && "font-semibold",
+          !positive && !negative && !bold && "font-medium"
+        )}
+      >
+        {value != null ? `S/ ${value.toFixed(2)}` : "--"}
+      </span>
+    </div>
+  )
+}
+
+function BackgroundFX() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
+    >
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_25%,hsl(var(--primary)/0.18),transparent_60%),radial-gradient(circle_at_85%_75%,hsl(var(--secondary)/0.18),transparent_55%)]" />
+      <div className="absolute -top-48 -right-40 h-[560px] w-[560px] rounded-full bg-primary/15 blur-3xl opacity-40 animate-pulse" />
+      <div className="absolute -bottom-48 -left-40 h-[560px] w-[560px] rounded-full bg-secondary/25 blur-3xl opacity-30 animate-pulse" />
     </div>
   )
 }

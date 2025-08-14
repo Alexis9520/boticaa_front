@@ -1,30 +1,64 @@
+// Cambios aplicados:
+// - En acciones se mantiene SOLO el botón de expandir (el botón de descargar PDF individual ya estaba quitado)
+// - Se eliminó también el botón PDF dentro del panel expandido (para que no haya descarga por venta).
+// - Se sigue permitiendo exportar CSV/PDF global desde la barra de acciones superior.
+// - DateRangePicker ahora es la versión sin calendario (solo presets) ya actualizada.
+// - Eliminado import y función exportarBoletaDetallePDF porque ya no se usa.
+
 "use client"
 
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
+import { useRouter } from "next/navigation"
 import {
-  Download,
+  Receipt,
   Plus,
   Search,
+  Download,
+  FileText,
+  ArrowDownUp,
   ChevronDown,
   ChevronRight,
-  Users,
-  Receipt,
   User2,
-  FileText,
-  ArrowDownUp
+  Users,
+  Loader2,
+  CalendarClock,
+  RefreshCcw,
+  Filter,
+  X,
+  Columns,
+  Layers,
+  Hash,
+  Wallet,
+  AlignLeft
 } from "lucide-react"
+
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
 import { DateRangePicker } from "@/components/date-range-picker"
+
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import { getBoletas } from "@/lib/api"
-// import { apiUrl } from "@/components/config" // (no usado aquí, puedes quitarlo si no lo necesitas)
+import { cn } from "@/lib/utils"
 
+/* ------------------------------ Tipos ------------------------------ */
 type ProductoVendido = {
   codBarras: string
   nombre: string
@@ -45,16 +79,21 @@ type Boleta = {
   vuelto?: string | number
 }
 
-type Rango = { from: Date | undefined, to: Date | undefined }
-
-function arrayToCSV(rows: string[][]) {
-  return rows
-    .map(row =>
-      row.map(cell => `"${(cell ?? "").replace(/"/g, '""')}"`).join(",")
-    )
-    .join("\n")
+type Rango = { from: Date | undefined; to: Date | undefined }
+interface GetBoletasParams {
+  page: number
+  limit: number
+  search?: string
+  from?: string
+  to?: string
 }
 
+/* ------------------------------ Utilidades export / formato ------------------------------ */
+function arrayToCSV(rows: string[][]) {
+  return rows
+    .map(row => row.map(cell => `"${(cell ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\n")
+}
 function downloadCSV(filename: string, rows: string[][]) {
   const BOM = "\uFEFF"
   const csv = arrayToCSV(rows)
@@ -66,37 +105,30 @@ function downloadCSV(filename: string, rows: string[][]) {
   a.click()
   URL.revokeObjectURL(url)
 }
-
 function formatFechaHora(fechaString: string) {
   if (!fechaString) return ""
   const fecha = new Date(fechaString)
   if (isNaN(fecha.getTime())) return fechaString
-  return `${fecha.getDate().toString().padStart(2, "0")}/${
-    (fecha.getMonth() + 1).toString().padStart(2, "0")
-  }/${fecha.getFullYear()} ${fecha.getHours().toString().padStart(2, "0")}:${
-    fecha.getMinutes().toString().padStart(2, "0")
-  }`
+  return `${fecha.getDate().toString().padStart(2, "0")}/${(fecha.getMonth() + 1)
+    .toString()
+    .padStart(2, "0")}/${fecha.getFullYear()} ${fecha
+    .getHours()
+    .toString()
+    .padStart(2, "0")}:${fecha.getMinutes().toString().padStart(2, "0")}`
 }
-
-function safeTime(fechaString: string): number {
-  const t = new Date(fechaString).getTime()
+function safeTime(f: string) {
+  const t = new Date(f).getTime()
   return isNaN(t) ? 0 : t
 }
-
-/**
- * Exporta el listado de boletas a PDF con todos los campos correctos.
- */
 function exportarBoletasPDF(boletasFiltradas: Boleta[]) {
   const doc = new jsPDF()
   doc.setFont("helvetica", "normal")
-  doc.setFontSize(15)
+  doc.setFontSize(16)
   doc.text("Listado de Boletas", 14, 16)
   autoTable(doc, {
-    startY: 22,
+    startY: 24,
     styles: { fontSize: 10, cellPadding: 2 },
-    head: [
-      ["Número", "Fecha", "Cliente", "Método de Pago", "Total de Compra", "Vuelto", "Usuario"]
-    ],
+    head: [["Número", "Fecha", "Cliente", "Método", "Total Compra", "Vuelto", "Usuario"]],
     body: boletasFiltradas.map(b => [
       b.numero,
       formatFechaHora(b.fecha),
@@ -107,135 +139,126 @@ function exportarBoletasPDF(boletasFiltradas: Boleta[]) {
       b.usuario ?? ""
     ]),
     theme: "grid",
-    headStyles: { fillColor: [230, 244, 249], textColor: 20, fontStyle: "bold" },
-    alternateRowStyles: { fillColor: [248, 248, 248] }
+    headStyles: { fillColor: [32, 110, 237], textColor: 255 },
+    alternateRowStyles: { fillColor: [245, 247, 250] }
   })
   doc.save("boletas.pdf")
 }
 
-function descargarBoletaPDF(boleta: Boleta) {
-  const doc = new jsPDF()
-  doc.setFont("helvetica", "bold")
-  doc.setFontSize(18)
-  doc.text("Detalle de Boleta", 14, 18)
-  doc.setFont("helvetica", "normal")
-  doc.setFontSize(13)
-  const fechaFormateada = formatFechaHora(boleta.fecha)
-  const table1 = autoTable(doc, {
-    startY: 28,
-    theme: "plain",
-    margin: { left: 14 },
-    body: [
-      ["N° Boleta:", boleta.numero],
-      ["Fecha:", fechaFormateada],
-      ["Cliente:", boleta.cliente],
-      ["Método de Pago:", boleta.metodoPago ?? ""],
-      ["Total de Compra:", boleta.totalCompra ?? ""],
-      ["Vuelto:", boleta.vuelto ?? ""],
-      ["Usuario:", boleta.usuario ?? ""]
-    ],
-    styles: { cellPadding: 2, fontSize: 12, halign: "left" }
-  })
-  if (boleta.productos && boleta.productos.length > 0) {
-    autoTable(doc, {
-      startY: (table1 as any)?.finalY ? (table1 as any).finalY + 7 : 35,
-      head: [["Código", "Nombre", "Cantidad", "Precio"]],
-      body: boleta.productos.map(prod => [
-        prod.codBarras ?? "",
-        prod.nombre ?? "",
-        prod.cantidad ?? "",
-        prod.precio ?? ""
-      ]),
-      theme: "striped",
-      headStyles: { fillColor: [33, 150, 243], textColor: 255, fontStyle: "bold" },
-      styles: { fontSize: 11, halign: "center" }
-    })
-  }
-  doc.save(`${boleta.numero}.pdf`)
-}
-
+/* ------------------------------ Componente principal ------------------------------ */
 export default function VentasPage() {
+  const router = useRouter()
+
   const [boletas, setBoletas] = useState<Boleta[]>([])
   const [totalBoletas, setTotalBoletas] = useState(0)
+  const [loading, setLoading] = useState(false)
+
   const [paginaActual, setPaginaActual] = useState(1)
   const [tamanoPagina, setTamanoPagina] = useState(10)
   const [boletaExpandida, setBoletaExpandida] = useState<number | null>(null)
   const [busquedaBoletas, setBusquedaBoletas] = useState("")
-  const [rangoFechasBoletas, setRangoFechasBoletas] = useState<Rango>({ from: undefined, to: undefined })
-
-  // Toggle opcional para invertir (si quieres dar opción al usuario)
+  const [rangoFechasBoletas, setRangoFechasBoletas] = useState<Rango>({
+    from: undefined,
+    to: undefined
+  })
   const [ordenDesc, setOrdenDesc] = useState(true)
+  const [columnasCompactas, setColumnasCompactas] = useState(false)
+  const [autoRefrescar, setAutoRefrescar] = useState(false)
+
+  const abortRef = useRef<AbortController | null>(null)
+
+  // Auto refresh
+  useEffect(() => {
+    if (!autoRefrescar) return
+    const id = setInterval(() => {
+      fetchBoletas()
+    }, 60000)
+    return () => clearInterval(id)
+  }, [autoRefrescar, paginaActual, tamanoPagina, busquedaBoletas, rangoFechasBoletas, ordenDesc])
 
   useEffect(() => {
     setPaginaActual(1)
-  }, [busquedaBoletas, rangoFechasBoletas])
+  }, [busquedaBoletas, rangoFechasBoletas, tamanoPagina])
 
   useEffect(() => {
-    const fetchBoletas = async () => {
-      try {
-        // Filtrado de fechas (incluye día completo final)
-        let from = rangoFechasBoletas.from
-          ? rangoFechasBoletas.from.toISOString().slice(0, 10)
-          : undefined
-        let to = rangoFechasBoletas.to
-          ? new Date(
-              rangoFechasBoletas.to.getFullYear(),
-              rangoFechasBoletas.to.getMonth(),
-              rangoFechasBoletas.to.getDate() + 1
-            ).toISOString().slice(0, 10)
-          : undefined
+    fetchBoletas()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paginaActual, tamanoPagina, busquedaBoletas, rangoFechasBoletas, ordenDesc])
 
-        const data = await getBoletas({
-          page: paginaActual,
-            /* Si tu API acepta parámetros de orden, agrega algo así:
-               order: ordenDesc ? "desc" : "asc",
-               sort: "fecha"
-            */
-          limit: tamanoPagina,
-          search: busquedaBoletas,
-          from,
-          to,
+  const fetchBoletas = useCallback(async () => {
+    setLoading(true)
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
+
+    try {
+      let from = rangoFechasBoletas.from
+        ? rangoFechasBoletas.from.toISOString().slice(0, 10)
+        : undefined
+      let to = rangoFechasBoletas.to
+        ? new Date(
+            rangoFechasBoletas.to.getFullYear(),
+            rangoFechasBoletas.to.getMonth(),
+            rangoFechasBoletas.to.getDate() + 1
+          )
+            .toISOString()
+            .slice(0, 10)
+        : undefined
+
+      const params: GetBoletasParams = {
+        page: paginaActual,
+        limit: tamanoPagina,
+        search: busquedaBoletas,
+        from,
+        to
+      }
+
+      const data: any = await getBoletas(params)
+      if (Array.isArray(data?.boletas)) {
+        const adaptadas: Boleta[] = data.boletas.map((b: any) => ({
+          ...b,
+          numero: b.numero ?? b.boleta ?? "",
+          fecha: b.fecha ?? b.fecha_venta ?? "",
+          total: b.total ?? b.total_compra ?? "",
+          totalCompra: b.totalCompra ?? b.total_compra ?? b.total ?? "",
+          vuelto: b.vuelto ?? "",
+          cliente: b.cliente ?? b.nombre_cliente ?? "",
+          metodoPago: b.metodoPago ?? b.metodo_pago ?? "",
+          usuario: b.usuario ?? b.usuario_nombre ?? "",
+          productos: b.productos ?? b.detalles ?? []
+        }))
+
+        adaptadas.sort((a, b) => {
+          const diff = safeTime(b.fecha) - safeTime(a.fecha)
+          return ordenDesc ? diff : -diff
         })
-
-        if (Array.isArray(data.boletas)) {
-          const boletasAdaptadas: Boleta[] = data.boletas.map((b: any) => ({
-            ...b,
-            numero: b.numero ?? b.boleta ?? "",
-            fecha: b.fecha ?? b.fecha_venta ?? "",
-            total: b.total ?? b.total_compra ?? "",
-            totalCompra: b.totalCompra ?? b.total_compra ?? b.total ?? "",
-            vuelto: b.vuelto ?? "",
-            cliente: b.cliente ?? b.nombre_cliente ?? "",
-            metodoPago: b.metodoPago ?? b.metodo_pago ?? "",
-            usuario: b.usuario ?? b.usuario_nombre ?? "",
-            productos: b.productos ?? b.detalles ?? [],
-          }))
-
-          // Orden descendente por fecha (más recientes primero)
-          boletasAdaptadas.sort((a, b) => {
-            const diff = safeTime(b.fecha) - safeTime(a.fecha)
-            return ordenDesc ? diff : -diff
-          })
-
-          setBoletas(boletasAdaptadas)
-          setTotalBoletas(Number(data.total) || 0)
-        } else {
-          setBoletas([])
-          setTotalBoletas(0)
-        }
-      } catch {
+        setBoletas(adaptadas)
+        setTotalBoletas(Number(data.total) || adaptadas.length)
+      } else {
         setBoletas([])
         setTotalBoletas(0)
       }
+    } catch {
+      setBoletas([])
+      setTotalBoletas(0)
+    } finally {
+      setLoading(false)
     }
-    fetchBoletas()
   }, [paginaActual, tamanoPagina, busquedaBoletas, rangoFechasBoletas, ordenDesc])
 
-  const totalPaginas = Math.ceil(totalBoletas / tamanoPagina) || 1
+  const totalPaginas = Math.max(1, Math.ceil(totalBoletas / tamanoPagina))
 
   const exportarBoletas = () => {
     const rows: string[][] = [
-      ["Número", "Fecha", "Cliente", "Método de Pago", "Total", "Total de Compra", "Vuelto", "Usuario"],
+      [
+        "Número",
+        "Fecha",
+        "Cliente",
+        "Método",
+        "Total",
+        "Total Compra",
+        "Vuelto",
+        "Usuario"
+      ],
       ...boletas.map(b => [
         String(b.numero),
         formatFechaHora(b.fecha),
@@ -250,268 +273,562 @@ export default function VentasPage() {
     downloadCSV("boletas.csv", rows)
   }
 
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-row items-center justify-between gap-4 mb-1">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Receipt className="h-6 w-6 text-primary" />
-            Gestión de Boletas
-          </h1>
-          <p className="text-muted-foreground">Administra y busca todas las boletas emitidas</p>
-        </div>
-        <Button asChild>
-          <Link href="/dashboard/ventas/nueva">
-            <Plus className="mr-2 h-4 w-4" />
-            Nueva Venta
-          </Link>
-        </Button>
-      </div>
+  // Stats
+  const totalEfectivo = useMemo(
+    () =>
+      boletas
+        .filter(b => (b.metodoPago ?? "").toLowerCase() === "efectivo")
+        .reduce((s, b) => s + Number(b.totalCompra || 0), 0),
+    [boletas]
+  )
+  const totalDigital = useMemo(
+    () =>
+      boletas
+        .filter(b =>
+          ["yape", "plin"].includes((b.metodoPago ?? "").toLowerCase())
+        )
+        .reduce((s, b) => s + Number(b.totalCompra || 0), 0),
+    [boletas]
+  )
 
-      <Card>
-        <CardHeader className="pb-3 flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-blue-500" />
-              Listado de Boletas
-            </CardTitle>
-            <CardDescription>Visualiza, busca y exporta todas las boletas de ventas</CardDescription>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setOrdenDesc(o => !o)}
-              title={ordenDesc ? "Mostrar más antiguas primero" : "Mostrar más recientes primero"}
-            >
-              <ArrowDownUp className="mr-2 h-4 w-4" />
-              {ordenDesc ? "Recientes" : "Antiguas"}
-            </Button>
-            <Button variant="outline" onClick={exportarBoletas}>
-              <Download className="mr-2 h-4 w-4" />
-              CSV
-            </Button>
-            <Button variant="outline" onClick={() => exportarBoletasPDF(boletas)}>
-              <Download className="mr-2 h-4 w-4" />
-              PDF
-            </Button>
+  const metodoBadgeVariant = (met: string | undefined) => {
+    const m = (met || "").toLowerCase()
+    if (m === "efectivo") return "default"
+    if (["yape", "plin", "tarjeta", "pos"].includes(m)) return "secondary"
+    return "outline"
+  }
+
+  return (
+    <div className="relative flex flex-col gap-7">
+      <BackgroundFX />
+
+      <header className="relative z-10 flex flex-col lg:flex-row gap-5 justify-between">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent flex items-center gap-2">
+            Boletas
+            <Receipt className="h-6 w-6 text-primary/70" />
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Gestión avanzada y exportación de comprobantes
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAutoRefrescar(a => !a)}
+            className={cn(
+              autoRefrescar && "border-primary/50 bg-primary/10 text-primary"
+            )}
+          >
+            <RefreshCcw
+              className={cn(
+                "mr-2 h-4 w-4",
+                autoRefrescar && "animate-spin-slow"
+              )}
+            />
+            Auto {autoRefrescar ? "ON" : "OFF"}
+          </Button>
+          <Button asChild size="sm" className="gap-2">
+            <Link href="/dashboard/ventas/nueva">
+              <Plus className="h-4 w-4" />
+              Nueva venta
+            </Link>
+          </Button>
+        </div>
+      </header>
+
+      <Card className="relative overflow-hidden border-border/60 backdrop-blur-xl bg-gradient-to-br from-background/70 to-background/40">
+        <CardHeader className="pb-4 relative z-10">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <FileText className="h-5 w-5 text-primary" />
+                Listado de Boletas
+              </CardTitle>
+              <CardDescription>
+                Busca, filtra, ordena y exporta tus boletas
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setOrdenDesc(o => !o)}
+                className="gap-2"
+                title="Cambiar orden"
+              >
+                <ArrowDownUp className="h-4 w-4" />
+                {ordenDesc ? "Recientes" : "Antiguas"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setColumnasCompactas(c => !c)}
+                className="gap-2"
+              >
+                <Columns className="h-4 w-4" />
+                {columnasCompactas ? "Full" : "Compacto"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={exportarBoletas}>
+                <Download className="h-4 w-4 mr-2" />
+                CSV
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => exportarBoletasPDF(boletas)}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                PDF
+              </Button>
+            </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="flex flex-col sm:flex-row gap-4 mb-6 mt-1">
-            <div className="flex-1 flex flex-col sm:flex-row gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="search"
-                  placeholder="Buscar por número de boleta, cliente o fecha..."
-                  className="pl-8"
-                  value={busquedaBoletas}
-                  onChange={e => setBusquedaBoletas(e.target.value)}
-                  autoFocus
-                />
-              </div>
+        <CardContent className="relative z-10 space-y-6">
+          {/* Filtros */}
+          <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-12">
+            <div className="lg:col-span-5 relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Buscar número, cliente, método..."
+                className="pl-8"
+                value={busquedaBoletas}
+                onChange={e => setBusquedaBoletas(e.target.value)}
+                autoFocus
+              />
+              {busquedaBoletas && (
+                <button
+                  onClick={() => setBusquedaBoletas("")}
+                  className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+                  aria-label="Limpiar búsqueda"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            <div className="lg:col-span-4 flex items-center">
               <DateRangePicker
                 value={
                   rangoFechasBoletas.from && rangoFechasBoletas.to
-                    ? { from: rangoFechasBoletas.from, to: rangoFechasBoletas.to }
+                    ? {
+                        from: rangoFechasBoletas.from,
+                        to: rangoFechasBoletas.to
+                      }
                     : rangoFechasBoletas.from
-                    ? { from: rangoFechasBoletas.from, to: rangoFechasBoletas.from }
+                    ? {
+                        from: rangoFechasBoletas.from,
+                        to: rangoFechasBoletas.from
+                      }
                     : undefined
                 }
                 onChange={range => {
                   if (range?.from && !range?.to) {
-                    setRangoFechasBoletas({ from: range.from, to: range.from })
+                    setRangoFechasBoletas({
+                      from: range.from,
+                      to: range.from
+                    })
                   } else {
-                    setRangoFechasBoletas({ from: range?.from, to: range?.to })
+                    setRangoFechasBoletas({
+                      from: range?.from,
+                      to: range?.to
+                    })
                   }
                 }}
+                className="w-full"
               />
+            </div>
+            <div className="lg:col-span-3 flex gap-3 items-center">
+              <div className="flex flex-col text-xs text-muted-foreground gap-1">
+                <span className="flex items-center gap-1">
+                  <Layers className="h-3.5 w-3.5" /> Efectivo:
+                  <b className="text-foreground tabular-nums">
+                    S/ {totalEfectivo.toFixed(2)}
+                  </b>
+                </span>
+                <span className="flex items-center gap-1">
+                  <Wallet className="h-3.5 w-3.5" /> Digital:
+                  <b className="text-foreground tabular-nums">
+                    S/ {totalDigital.toFixed(2)}
+                  </b>
+                </span>
+              </div>
+              <div className="ml-auto text-[11px] text-muted-foreground">
+                <div className="flex items-center gap-1">
+                  <Filter className="h-3.5 w-3.5" /> {totalBoletas} total
+                </div>
+                <div className="flex items-center gap-1">
+                  <Hash className="h-3.5 w-3.5" /> Pag {paginaActual}/{totalPaginas}
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Paginación arriba */}
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <label>
-                  <span className="mr-2">Boletas por página:</span>
-                  <select
-                    value={tamanoPagina}
-                    onChange={e => {
-                      setTamanoPagina(Number(e.target.value))
-                      setPaginaActual(1)
-                    }}
-                    className="border rounded px-2 py-1"
-                  >
-                    {[5, 10, 20, 50].map(size => (
-                      <option key={size} value={size}>{size}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPaginaActual(prev => Math.max(1, prev - 1))}
-                  disabled={paginaActual === 1}
-                >
-                  Anterior
-                </Button>
-                <span className="text-sm">
-                  Página <b>{paginaActual}</b> de <b>{totalPaginas}</b>
+          {/* Paginación superior */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+              <span className="flex items-center gap-1">
+                <CalendarClock className="h-3.5 w-3.5" />
+                Rango:{" "}
+                {rangoFechasBoletas.from
+                  ? `${formatFechaDDMM(rangoFechasBoletas.from)}${
+                      rangoFechasBoletas.to &&
+                      rangoFechasBoletas.to.getTime() !==
+                        rangoFechasBoletas.from.getTime()
+                        ? " → " + formatFechaDDMM(rangoFechasBoletas.to)
+                        : ""
+                    }`
+                  : "Todos"}
+              </span>
+              {busquedaBoletas && (
+                <span className="flex items-center gap-1">
+                  <AlignLeft className="h-3.5 w-3.5" /> Búsqueda: "
+                  {busquedaBoletas.slice(0, 24)}
+                  {busquedaBoletas.length > 24 && "..."}"
                 </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPaginaActual(prev => Math.min(totalPaginas, prev + 1))}
-                  disabled={paginaActual === totalPaginas || totalPaginas === 0}
-                >
-                  Siguiente
-                </Button>
-              </div>
+              )}
+              <span className="flex items-center gap-1">
+                <User2 className="h-3.5 w-3.5" /> Exp:{" "}
+                {boletaExpandida ? "#" + boletaExpandida : "Ninguna"}
+              </span>
             </div>
+            <PaginationControls
+              paginaActual={paginaActual}
+              totalPaginas={totalPaginas}
+              tamanoPagina={tamanoPagina}
+              setPaginaActual={setPaginaActual}
+              setTamanoPagina={v => {
+                setTamanoPagina(v)
+                setPaginaActual(1)
+              }}
+            />
+          </div>
 
-          <div className="rounded-md border overflow-x-auto">
-            <Table>
+          <div className="rounded-xl border bg-background/60 backdrop-blur-sm overflow-x-auto shadow-inner relative">
+            {loading && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-sm">
+                <div className="flex flex-col items-center gap-2">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  <span className="text-xs text-muted-foreground">
+                    Cargando boletas...
+                  </span>
+                </div>
+              </div>
+            )}
+            <Table className={cn(columnasCompactas && "[&_td]:py-1.5 [&_th]:py-2 text-sm")}>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="whitespace-nowrap">N° Boleta</TableHead>
+                <TableRow className="bg-muted/40">
+                  <TableHead className="whitespace-nowrap">#</TableHead>
                   <TableHead>Fecha</TableHead>
                   <TableHead>Cliente</TableHead>
-                  <TableHead>Método Pago</TableHead>
+                  <TableHead>Método</TableHead>
                   <TableHead>Total</TableHead>
-                  <TableHead>Vuelto</TableHead>
-                  <TableHead>Usuario</TableHead>
-                  <TableHead className="text-right">Detalles</TableHead>
+                  <TableHead className="hidden md:table-cell">Vuelto</TableHead>
+                  <TableHead className="hidden md:table-cell">Usuario</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {boletas.length > 0 ? boletas.map(boleta => (
-                  <React.Fragment key={boleta.id}>
-                    <TableRow className="transition hover:bg-blue-50/30">
-                      <TableCell className="font-bold text-blue-700">{boleta.numero}</TableCell>
-                      <TableCell>{formatFechaHora(boleta.fecha)}</TableCell>
-                      <TableCell>
-                        <span className="flex items-center gap-1">
-                          <User2 className="h-4 w-4 text-muted-foreground" />
-                          {boleta.cliente}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={
-                          (boleta.metodoPago ?? "").toLowerCase() === "efectivo"
-                            ? "default"
-                            : ["yape", "plin"].includes((boleta.metodoPago ?? "").toLowerCase())
-                              ? "secondary"
-                              : "outline"
-                        }>
-                          {boleta.metodoPago}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-semibold">{boleta.totalCompra}</TableCell>
-                      <TableCell>{boleta.vuelto}</TableCell>
-                      <TableCell>
-                        <span className="flex items-center gap-1">
-                          <Users className="h-4 w-4 text-muted-foreground" />
-                          {boleta.usuario}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right flex flex-row gap-1 justify-end">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setBoletaExpandida(boletaExpandida === boleta.id ? null : boleta.id)}
-                          title={boletaExpandida === boleta.id ? "Ocultar productos" : "Ver productos"}
-                        >
-                          {boletaExpandida === boleta.id
-                            ? <ChevronDown className="h-4 w-4" />
-                            : <ChevronRight className="h-4 w-4" />}
-                          <span className="sr-only">{boletaExpandida === boleta.id ? "Ocultar" : "Ver más"}</span>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                    {boletaExpandida === boleta.id && (
-                      <TableRow key={boleta.id + "-expandida"}>
-                        <TableCell colSpan={8} className="bg-blue-50/20 p-0">
-                          <div className="p-3">
-                            <strong className="block mb-2 text-blue-800 text-sm">Productos vendidos:</strong>
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>Código</TableHead>
-                                  <TableHead>Nombre</TableHead>
-                                  <TableHead>Cantidad</TableHead>
-                                  <TableHead>Precio</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {(boleta.productos ?? []).map(prod => (
-                                  <TableRow key={prod.codBarras}>
-                                    <TableCell>{prod.codBarras}</TableCell>
-                                    <TableCell>{prod.nombre}</TableCell>
-                                    <TableCell>{prod.cantidad}</TableCell>
-                                    <TableCell>{prod.precio}</TableCell>
-                                  </TableRow>
-                                ))}
-                                <TableRow>
-                                  <TableCell colSpan={3} className="font-semibold text-right">Total</TableCell>
-                                  <TableCell className="font-semibold">{boleta.totalCompra}</TableCell>
-                                </TableRow>
-                                <TableRow>
-                                  <TableCell colSpan={3} className="font-semibold text-right">Vuelto</TableCell>
-                                  <TableCell className="font-semibold">{boleta.vuelto}</TableCell>
-                                </TableRow>
-                              </TableBody>
-                            </Table>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </React.Fragment>
-                )) : (
+                {(!loading && boletas.length === 0) && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">
                       <Receipt className="inline h-5 w-5 opacity-60 mr-2" />
-                      No se encontraron boletas.
+                      No se encontraron boletas
                     </TableCell>
                   </TableRow>
+                )}
+                {boletas.map((b) => {
+                  const expandida = boletaExpandida === b.id
+                  return (
+                    <React.Fragment key={b.id}>
+                      <TableRow
+                        className={cn(
+                          "group cursor-pointer transition-colors",
+                          expandida && "bg-primary/5"
+                        )}
+                        onDoubleClick={() =>
+                          setBoletaExpandida(expandida ? null : b.id)
+                        }
+                      >
+                        <TableCell className="font-semibold text-primary/80">
+                          {b.numero}
+                        </TableCell>
+                        <TableCell className="text-xs md:text-sm">
+                          {formatFechaHora(b.fecha)}
+                        </TableCell>
+                        <TableCell>
+                          <span className="flex items-center gap-1">
+                            <User2 className="h-4 w-4 text-muted-foreground" />
+                            <span className="truncate max-w-[140px]">
+                              {b.cliente || "-"}
+                            </span>
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={metodoBadgeVariant(b.metodoPago)}>
+                            {b.metodoPago || "-"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-medium tabular-nums">
+                          {b.totalCompra}
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell tabular-nums">
+                          {b.vuelto || "—"}
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell">
+                          <span className="flex items-center gap-1 text-xs">
+                            <Users className="h-4 w-4 text-muted-foreground" />
+                            {b.usuario || "-"}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={e => {
+                              e.stopPropagation()
+                              setBoletaExpandida(expandida ? null : b.id)
+                            }}
+                            title={expandida ? "Cerrar detalles" : "Ver detalles"}
+                          >
+                            {expandida ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                      {expandida && (
+                        <TableRow className="bg-primary/3">
+                          <TableCell colSpan={8} className="p-0">
+                            <div className="p-4 border-t bg-gradient-to-br from-background/70 to-background/30">
+                              <p className="text-sm font-semibold flex items-center gap-2 mb-3">
+                                <Receipt className="h-4 w-4 text-primary" />
+                                Productos vendidos
+                              </p>
+                              <div className="rounded-lg border overflow-x-auto bg-background/60">
+                                <Table className="text-xs">
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Código</TableHead>
+                                      <TableHead>Nombre</TableHead>
+                                      <TableHead>Cant.</TableHead>
+                                      <TableHead>Precio</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {b.productos?.map(p => (
+                                      <TableRow key={p.codBarras}>
+                                        <TableCell className="tabular-nums">
+                                          {p.codBarras}
+                                        </TableCell>
+                                        <TableCell>{p.nombre}</TableCell>
+                                        <TableCell className="tabular-nums">
+                                          {p.cantidad}
+                                        </TableCell>
+                                        <TableCell className="tabular-nums">
+                                          {p.precio}
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                    <TableRow>
+                                      <TableCell
+                                        colSpan={3}
+                                        className="text-right font-semibold"
+                                      >
+                                        Total
+                                      </TableCell>
+                                      <TableCell className="font-semibold tabular-nums">
+                                        {b.totalCompra}
+                                      </TableCell>
+                                    </TableRow>
+                                    <TableRow>
+                                      <TableCell
+                                        colSpan={3}
+                                        className="text-right font-semibold"
+                                      >
+                                        Vuelto
+                                      </TableCell>
+                                      <TableCell className="font-semibold tabular-nums">
+                                        {b.vuelto}
+                                      </TableCell>
+                                    </TableRow>
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  )
+                })}
+
+                {loading && boletas.length === 0 && (
+                  <>
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <SkeletonRow key={i} cols={8} compact={columnasCompactas} />
+                    ))}
+                  </>
                 )}
               </TableBody>
             </Table>
           </div>
 
-          {/* Paginación abajo */}
-          <div className="flex items-center justify-between mt-2">
-            <div>
-              <span className="text-xs text-muted-foreground">
-                Mostrando <b>{boletas.length}</b> de <b>{totalBoletas}</b> boletas
+          {/* Paginación inferior */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-4 border-t">
+            <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
+              <span>
+                Mostrando{" "}
+                <b className="text-foreground">{boletas.length}</b> de{" "}
+                <b className="text-foreground">{totalBoletas}</b> boletas
+              </span>
+              <span>
+                Página <b className="text-foreground">{paginaActual}</b> /{" "}
+                <b className="text-foreground">{totalPaginas}</b>
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPaginaActual(prev => Math.max(1, prev - 1))}
-                disabled={paginaActual === 1}
-              >
-                Anterior
-              </Button>
-              <span className="text-sm">
-                Página <b>{paginaActual}</b> de <b>{totalPaginas}</b>
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPaginaActual(prev => Math.min(totalPaginas, prev + 1))}
-                disabled={paginaActual === totalPaginas || totalPaginas === 0}
-              >
-                Siguiente
-              </Button>
-            </div>
+            <PaginationControls
+              paginaActual={paginaActual}
+              totalPaginas={totalPaginas}
+              tamanoPagina={tamanoPagina}
+              setPaginaActual={setPaginaActual}
+              setTamanoPagina={v => {
+                setTamanoPagina(v)
+                setPaginaActual(1)
+              }}
+              variant="secondary"
+              showSizeSelector
+            />
           </div>
         </CardContent>
+
+        <CardGlow />
       </Card>
     </div>
   )
+}
+
+/* ------------------------------ Subcomponentes ------------------------------ */
+function PaginationControls({
+  paginaActual,
+  totalPaginas,
+  tamanoPagina,
+  setPaginaActual,
+  setTamanoPagina,
+  variant = "outline",
+  showSizeSelector = false
+}: {
+  paginaActual: number
+  totalPaginas: number
+  tamanoPagina: number
+  setPaginaActual: (n: number) => void
+  setTamanoPagina: (n: number) => void
+  variant?: "outline" | "secondary"
+  showSizeSelector?: boolean
+}) {
+  return (
+    <div className="flex gap-3 items-center flex-wrap">
+      {showSizeSelector && (
+        <label className="flex items-center gap-2 text-xs">
+          <span className="text-muted-foreground">Por página</span>
+          <select
+            value={tamanoPagina}
+            onChange={e => setTamanoPagina(Number(e.target.value))}
+            className="h-8 rounded-md bg-background/70 border border-border/60 text-xs px-2"
+          >
+            {[5, 10, 20, 50, 100].map(s => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <div className="flex items-center gap-1">
+        <Button
+          size="sm"
+          variant={variant}
+          onClick={() => setPaginaActual(1)}
+          disabled={paginaActual === 1}
+          className="h-8 px-3"
+        >
+          «
+        </Button>
+        <Button
+          size="sm"
+          variant={variant}
+          onClick={() => setPaginaActual(Math.max(1, paginaActual - 1))}
+          disabled={paginaActual === 1}
+          className="h-8 px-3"
+        >
+          Prev
+        </Button>
+        <span className="text-xs text-muted-foreground px-1 tabular-nums">
+          {paginaActual} / {totalPaginas}
+        </span>
+        <Button
+          size="sm"
+          variant={variant}
+          onClick={() =>
+            setPaginaActual(Math.min(totalPaginas, paginaActual + 1))
+          }
+          disabled={paginaActual === totalPaginas}
+          className="h-8 px-3"
+        >
+          Next
+        </Button>
+        <Button
+          size="sm"
+          variant={variant}
+          onClick={() => setPaginaActual(totalPaginas)}
+          disabled={paginaActual === totalPaginas}
+          className="h-8 px-3"
+        >
+          »
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function SkeletonRow({ cols, compact }: { cols: number; compact?: boolean }) {
+  return (
+    <TableRow>
+      {Array.from({ length: cols }).map((_, i) => (
+        <TableCell key={i} className={cn(compact ? "py-1.5" : "py-3")}>
+          <div className="h-4 w-full animate-pulse rounded bg-muted/40" />
+        </TableCell>
+      ))}
+    </TableRow>
+  )
+}
+
+/* ------------------------------ FX / Decoración ------------------------------ */
+function BackgroundFX() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
+    >
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,hsl(var(--primary)/0.12),transparent_55%),radial-gradient(circle_at_85%_70%,hsl(var(--secondary)/0.12),transparent_55%)]" />
+      <div className="absolute -top-40 -right-40 h-[520px] w-[520px] rounded-full bg-gradient-to-br from-primary/20 to-transparent blur-3xl opacity-50 animate-pulse" />
+      <div className="absolute -bottom-40 -left-40 h-[480px] w-[480px] rounded-full bg-gradient-to-tr from-secondary/25 to-transparent blur-3xl opacity-40 animate-pulse" />
+    </div>
+  )
+}
+function CardGlow() {
+  return (
+    <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-border/40 [mask-image:linear-gradient(to_bottom,rgba(255,255,255,0.65),rgba(255,255,255,0.1))]" />
+  )
+}
+
+/* ------------------------------ Helpers ------------------------------ */
+function formatFechaDDMM(d: Date) {
+  return `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1)
+    .toString()
+    .padStart(2, "0")}`
 }
