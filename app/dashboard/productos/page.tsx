@@ -105,12 +105,16 @@ export default function ProductosPage() {
 
   const [productos, setProductos] = useState<Producto[]>([])
   const [busqueda, setBusqueda] = useState("")
+  const [debouncedBusqueda, setDebouncedBusqueda] = useState("") // <-- debounce
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
   const [densityCompact, setDensityCompact] = useState(false)
 
   // Paginación
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalElements, setTotalElements] = useState(0)
+
 
   // Nuevo producto
   const [nuevoProducto, setNuevoProducto] = useState({
@@ -148,37 +152,43 @@ export default function ProductosPage() {
   /* ------------ CARGA ------------- */
   const cargarProductos = useCallback(async () => {
     try {
-      const data = await fetchWithAuth(apiUrl("/productos"))
-      setProductos(data || [])
-    } catch {
+      const q = (debouncedBusqueda || "").trim()
+      const url = `/productos?page=${page-1}&size=${pageSize}${q ? `&q=${encodeURIComponent(q)}` : ""}`
+      const data = await fetchWithAuth(apiUrl(url))
+      setProductos(data.content || [])
+      setTotalPages(data.totalPages || 1)
+      setTotalElements(data.totalElements || 0)
+    } catch (err) {
+      console.error("Error cargarProductos:", err)
       toast({
         title: "Error",
         description: "No se pudo cargar productos",
         variant: "destructive"
       })
     }
-  }, [toast])
+  }, [toast, page, pageSize, debouncedBusqueda])
 
-  useEffect(() => { cargarProductos() }, [cargarProductos])
+  // Debounce para la búsqueda (evita llamadas en cada tecla)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedBusqueda(busqueda.trim())
+    }, 300) // 300ms debounce (ajusta si quieres)
+    return () => clearTimeout(t)
+  }, [busqueda])
+
+  // Cuando cambia la búsqueda "debounceada", resetear a página 1
+  useEffect(() => {
+    setPage(1)
+  }, [debouncedBusqueda])
+
+  // Cargar productos cuando cambian page / pageSize / debouncedBusqueda (cargarProductos ya depende de ellos)
+  useEffect(() => {
+    cargarProductos()
+  }, [cargarProductos])
 
   /* ------------ FILTRO ------------- */
-  const productosFiltrados = useMemo(
-    () => productos.filter(p =>
-      p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-      p.codigoBarras.toLowerCase().includes(busqueda.toLowerCase()) ||
-      (p.categoria || "").toLowerCase().includes(busqueda.toLowerCase()) ||
-      (p.laboratorio || "").toLowerCase().includes(busqueda.toLowerCase())
-    ),
-    [productos, busqueda]
-  )
-
-  useEffect(() => { setPage(1) }, [busqueda, productosFiltrados.length])
-
-  const totalPages = Math.max(1, Math.ceil(productosFiltrados.length / pageSize))
-  const pageItems = useMemo(
-    () => productosFiltrados.slice((page - 1) * pageSize, page * pageSize),
-    [productosFiltrados, page, pageSize]
-  )
+  // Ahora la búsqueda la hace el servidor (q). Aquí sólo mostramos lo que devuelve el backend.
+  const pageItems = productos
 
   /* ------------ CRUD NUEVO ------------- */
   function agregarLoteANuevo() {
@@ -482,6 +492,9 @@ export default function ProductosPage() {
   }
 
   /* ------------ RENDER ------------- */
+  const startIndex = (page - 1) * pageSize + 1
+  const endIndex = startIndex + productos.length - 1
+
   return (
     <div className="flex flex-col gap-6 relative">
       <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_15%_20%,hsl(var(--primary)/0.08),transparent_55%),radial-gradient(circle_at_85%_70%,hsl(var(--secondary)/0.10),transparent_60%)]" />
@@ -634,7 +647,7 @@ export default function ProductosPage() {
                 onChange={e=>setBusqueda(e.target.value)}
               />
               <div className="absolute right-2 top-2 text-[10px] text-muted-foreground">
-                {productosFiltrados.length}
+                {totalElements}
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -651,7 +664,7 @@ export default function ProductosPage() {
                 </SelectContent>
               </Select>
               <span className="text-xs text-muted-foreground whitespace-nowrap">
-                {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, productosFiltrados.length)} de {productosFiltrados.length}
+                {startIndex}-{endIndex} de {totalElements}
               </span>
             </div>
           </div>

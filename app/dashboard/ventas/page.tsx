@@ -329,12 +329,7 @@ export default function VentasPage() {
             />
             Auto {autoRefrescar ? "ON" : "OFF"}
           </Button>
-          <Button asChild size="sm" className="gap-2">
-            <Link href="/dashboard/ventas/nueva">
-              <Plus className="h-4 w-4" />
-              Nueva venta
-            </Link>
-          </Button>
+          
         </div>
       </header>
 

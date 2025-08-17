@@ -1,31 +1,33 @@
 "use client"
 
-import type React from "react"
-
-import { useEffect, useState } from "react"
+import React, { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
 import {
-  BarChart3,
-  Box,
-  ClipboardList,
-  CreditCard,
   Home,
-  Package,
+  ShoppingCart,
+  Plus,
+  Receipt,
+  History,
+  Wallet,
   Pill,
-  Settings,
+  Box,
+  BarChart3,
   Users,
-  X,
-  Menu,
+  Settings,
   Sparkles,
+  Code2,
+  Menu,
+  X
 } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 
-// IMPORTA tu changelog estático
+// Changelog data
 import { CHANGELOG, isRecent } from "@/lib/changelog"
 
 interface NavItem {
@@ -33,87 +35,125 @@ interface NavItem {
   href: string
   icon: React.ReactNode
   adminOnly?: boolean
-  id?: string
+  id?: string // for special cases like changelog
 }
 
+/* -------------------------------------------------------
+   Icon set (composites para darle más semántica visual)
+-------------------------------------------------------- */
+const Icons = {
+  dashboard: <Home className="h-5 w-5" />,
+  nuevaVenta: (
+    <span className="relative inline-flex">
+      <ShoppingCart className="h-5 w-5" />
+      <Plus className="h-3 w-3 absolute -right-1 -top-1 rounded-full bg-primary text-primary-foreground p-[1px]" />
+    </span>
+  ),
+  historialVentas: (
+    <span className="relative inline-flex">
+      <Receipt className="h-5 w-5" />
+      <History className="h-3 w-3 absolute -right-1 -bottom-1 opacity-80" />
+    </span>
+  ),
+  caja: <Wallet className="h-5 w-5" />,
+  productos: <Pill className="h-5 w-5" />,
+  stock: <Box className="h-5 w-5" />,
+  reportes: <BarChart3 className="h-5 w-5" />,
+  usuarios: <Users className="h-5 w-5" />,
+  configuracion: <Settings className="h-5 w-5" />,
+  changelog: <Sparkles className="h-5 w-5" />,
+  desarrolladores: <Code2 className="h-5 w-5" />
+}
+
+/* -------------------------------------------------------
+   Navigation Items
+-------------------------------------------------------- */
 const navItems: NavItem[] = [
   {
     title: "Dashboard",
     href: "/dashboard",
-    icon: <Home className="h-5 w-5" />,
-    adminOnly: true,
+    icon: Icons.dashboard,
+    adminOnly: true
   },
-  
   {
-    title: "Ventas",
+    title: "Vender",
+    href: "/dashboard/nueva",
+    icon: Icons.nuevaVenta,
+  },
+  {
+    title: "Historial ventas",
     href: "/dashboard/ventas",
-    icon: <CreditCard className="h-5 w-5" />,
+    icon: Icons.historialVentas
   },
   {
     title: "Caja",
     href: "/dashboard/caja",
-    icon: <ClipboardList className="h-5 w-5" />,
+    icon: Icons.caja
   },
   {
     title: "Productos",
     href: "/dashboard/productos",
-    icon: <Package className="h-5 w-5" />,
+    icon: Icons.productos
   },
   {
     title: "Stock",
     href: "/dashboard/stock",
-    icon: <Box className="h-5 w-5" />,
+    icon: Icons.stock
   },
   {
     title: "Reportes",
     href: "/dashboard/reportes",
-    icon: <BarChart3 className="h-5 w-5" />,
-    adminOnly: true,
+    icon: Icons.reportes,
+    adminOnly: true
   },
   {
     title: "Usuarios",
     href: "/dashboard/usuarios",
-    icon: <Users className="h-5 w-5" />,
-    adminOnly: true,
+    icon: Icons.usuarios,
+    adminOnly: true
   },
   {
     title: "Configuración",
     href: "/dashboard/configuracion",
-    icon: <Settings className="h-5 w-5" />,
-    adminOnly: true,
+    icon: Icons.configuracion,
+    adminOnly: true
   },
   {
     title: "Actualizaciones",
     href: "/dashboard/actualizaciones",
-    icon: <Sparkles className="h-5 w-5" />,
-    id: "changelog",
+    icon: Icons.changelog,
+    id: "changelog"
   },
   {
     title: "Desarrolladores",
     href: "/dashboard/desarrolladores",
-    icon: <Users className="h-5 w-5" />,
-    adminOnly: true,
-  },
+    icon: Icons.desarrolladores,
+    adminOnly: true
+  }
 ]
 
 const CHANGELOG_STORAGE_KEY = "changelog:lastSeenVersion"
 
+/* -------------------------------------------------------
+   Sidebar Component
+-------------------------------------------------------- */
 export default function Sidebar() {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
   const { user } = useAuth()
 
-  const isAdmin = user?.rol === "administrador"
-  const filteredNavItems = navItems.filter((item) => !item.adminOnly || (item.adminOnly && isAdmin))
+  const isAdmin = user?.rol?.toLowerCase() === "administrador"
+  const filteredNavItems = navItems.filter(
+    (item) => !item.adminOnly || (item.adminOnly && isAdmin)
+  )
 
-  // Datos del changelog (primer elemento es la versión más reciente)
+  // Changelog meta
   const latest = CHANGELOG[0]
-  const isLatestRecent = latest ? isRecent(latest.date) : false
-
+  const isLatestRecent = latest ? isRecent(latest.date) : false // (por si luego quieres usarlo)
   const [lastSeen, setLastSeen] = useState<string | null>(null)
-  const unread = latest && lastSeen !== latest.version // no ha visitado aún la versión nueva
+  const unread = latest && lastSeen !== latest.version
 
-  // Al montar: leer localStorage
+  // Leer localStorage al montar
   useEffect(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem(CHANGELOG_STORAGE_KEY)
@@ -121,7 +161,7 @@ export default function Sidebar() {
     }
   }, [])
 
-  // Cuando el usuario navega a la página de actualizaciones se marca como visto
+  // Marcar como leído al entrar a la ruta de actualizaciones
   useEffect(() => {
     if (pathname.startsWith("/dashboard/actualizaciones") && latest) {
       localStorage.setItem(CHANGELOG_STORAGE_KEY, latest.version)
@@ -130,28 +170,29 @@ export default function Sidebar() {
   }, [pathname, latest])
 
   const renderNavLink = (item: NavItem) => {
-    const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href))
+    const active =
+      pathname === item.href ||
+      (item.href !== "/dashboard" && pathname.startsWith(item.href))
+
     return (
       <Link
         key={item.href}
         href={item.href}
         className={cn(
-          "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors relative",
+          "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition relative outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
           active
-            ? "bg-gray-100 text-emerald-600 dark:bg-slate-800 dark:text-emerald-400"
-            : "text-gray-600 dark:text-gray-400",
+            ? "bg-primary/10 text-primary dark:bg-primary/15"
+            : "text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/30"
         )}
         onClick={() => setOpen(false)}
       >
         <span className="relative">
           {item.icon}
-          {/* Indicador pequeño (dot) si hay cambios no leídos y no estamos dentro de la página */}
           {item.id === "changelog" && unread && !active && (
-            <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-950 animate-pulse" />
+            <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-primary ring-2 ring-background animate-pulse" />
           )}
         </span>
         <span className="flex-1 truncate">{item.title}</span>
-        
       </Link>
     )
   }
@@ -159,11 +200,13 @@ export default function Sidebar() {
   return (
     <>
       {/* Desktop */}
-      <aside className="hidden md:flex flex-col w-64 border-r bg-white dark:bg-slate-950">
+      <aside className="hidden md:flex flex-col w-64 border-r bg-background">
         <div className="flex h-14 items-center border-b px-4">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <Pill className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-            <span className="font-semibold text-lg">Boticas Said</span>
+            <Pill className="h-6 w-6 text-primary" />
+            <span className="font-semibold text-lg tracking-tight">
+              Boticas Said
+            </span>
           </Link>
         </div>
         <ScrollArea className="flex-1">
@@ -173,43 +216,43 @@ export default function Sidebar() {
         </ScrollArea>
       </aside>
 
-      {/* Mobile (Sheet) */}
+      {/* Mobile */}
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger asChild>
           <Button
             variant="outline"
             size="icon"
-            className="md:hidden fixed left-4 top-3 z-40 bg-white dark:bg-slate-950"
+            className="md:hidden fixed left-4 top-3 z-40 bg-background"
           >
             <Menu className="h-5 w-5" />
             <span className="sr-only">Abrir menú</span>
           </Button>
         </SheetTrigger>
         <SheetContent side="left" className="p-0 w-64">
-            <div className="flex h-14 items-center border-b px-4">
-              <Link
-                href="/dashboard"
-                className="flex items-center gap-2"
-                onClick={() => setOpen(false)}
-              >
-                <Pill className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-                <span className="font-semibold text-lg">Boticas Said</span>
-              </Link>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="ml-auto"
-                onClick={() => setOpen(false)}
-              >
-                <X className="h-5 w-5" />
-                <span className="sr-only">Cerrar</span>
-              </Button>
-            </div>
-            <ScrollArea className="h-[calc(100vh-3.5rem)]">
-              <nav className="grid gap-1 px-2 py-4">
-                {filteredNavItems.map(renderNavLink)}
-              </nav>
-            </ScrollArea>
+          <div className="flex h-14 items-center border-b px-4">
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-2"
+              onClick={() => setOpen(false)}
+            >
+              <Pill className="h-6 w-6 text-primary" />
+              <span className="font-semibold text-lg">Boticas Said</span>
+            </Link>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ml-auto"
+              onClick={() => setOpen(false)}
+            >
+              <X className="h-5 w-5" />
+              <span className="sr-only">Cerrar</span>
+            </Button>
+          </div>
+          <ScrollArea className="h-[calc(100vh-3.5rem)]">
+            <nav className="grid gap-1 px-2 py-4">
+              {filteredNavItems.map(renderNavLink)}
+            </nav>
+          </ScrollArea>
         </SheetContent>
       </Sheet>
     </>
