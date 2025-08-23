@@ -1,4 +1,4 @@
-import { apiUrl } from "../components/config"; // Ajusta la ruta si tu config cambia de lugar
+import { apiUrl } from "../components/config"; 
 
 type ToastFn = (opts: { title: string; description: string; variant?: "destructive" | "default" }) => void;
 
