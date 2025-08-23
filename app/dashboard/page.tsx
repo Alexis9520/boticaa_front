@@ -25,7 +25,7 @@ import {
 } from "lucide-react"
 
 import { useAuth } from "@/components/auth-provider"
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/lib/use-toast"
 import { fetchWithAuth } from "@/lib/api"
 import { apiUrl } from "@/components/config"
 

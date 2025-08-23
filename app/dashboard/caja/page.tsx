@@ -34,7 +34,7 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/lib/use-toast"
 import { apiUrl } from "@/components/config"
 import {
   Dialog,
@@ -596,38 +596,7 @@ export default function CajaPage() {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 8 }}
       >
-        <Card
-          className={cn(
-            "relative overflow-hidden",
-            esFaltante
-              ? "border-red-500/60 bg-red-500/5"
-              : "border-emerald-500/60 bg-emerald-500/5"
-          )}
-        >
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(255,255,255,0.12),transparent_60%)]" />
-            <CardHeader className="flex flex-row items-center gap-2 pb-2">
-            <AlertTriangle
-              className={esFaltante ? "text-red-500" : "text-emerald-500"}
-            />
-            <CardTitle
-              className={cn(
-                "text-base",
-                esFaltante ? "text-red-500" : "text-emerald-500"
-              )}
-            >
-              {esFaltante ? "Faltante detectado" : "Sobrante detectado"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm">
-            {esFaltante
-              ? `Faltan S/ ${Math.abs(diferencia).toFixed(
-                  2
-                )} respecto al esperado.`
-              : `Sobran S/ ${Math.abs(diferencia).toFixed(
-                  2
-                )} respecto al esperado.`}
-          </CardContent>
-        </Card>
+        
       </motion.div>
     )
   }
@@ -825,10 +794,7 @@ export default function CajaPage() {
                   <Row label="Ingresos manuales" value={resumen?.ingresos} sign="+" color="text-emerald-500" />
                   <Row label="Ventas efectivo" value={resumen?.ventasEfectivo} sign="+" color="text-emerald-500" />
                   <Row label="Egresos" value={resumen?.egresos} sign="-" color="text-red-500" />
-                  <div className="flex justify-between font-semibold pt-1 border-t">
-                    <span>Esperado:</span>
-                    <span>S/ {calcularEfectivoEsperado()}</span>
-                  </div>
+                  
                 </div>
 
                 <div className="space-y-2">
@@ -1278,11 +1244,7 @@ export default function CajaPage() {
                       value={resumen?.egresos}
                       negative
                     />
-                    <MetricRow
-                      label="Efectivo esperado"
-                      value={efectivoEsperadoNum}
-                      bold
-                    />
+                    
                   </MetricList>
                 </div>
 

@@ -1,0 +1,149 @@
+/* -------- BASE LIGHT (igual que antes, puedes ajustar si quieres un light distinto) -------- */
+:root {
+  --fc-surface: linear-gradient(145deg,#ffffff 0%,#f7fafc 55%,#eef2f5 100%);
+  --fc-surface-overlay: radial-gradient(circle at 60% 35%,rgba(140,170,255,0.15),transparent 70%);
+  --fc-border: rgba(0,0,0,0.07);
+  --fc-border-strong: rgba(0,0,0,0.14);
+  --fc-shadow-a: 0 2px 4px -2px rgba(0,0,0,0.06);
+  --fc-shadow-b: 0 8px 28px -10px rgba(0,0,0,0.08);
+  --fc-text-primary: #0f172a;
+  --fc-text-secondary: #556273;
+  --fc-divider: rgba(0,0,0,0.1);
+  --fc-focus-ring: 0 0 0 2px rgba(6,182,212,0.45);
+  --fc-input-bg: rgba(255,255,255,0.9);
+  --fc-input-border: rgba(0,0,0,0.18);
+  --fc-input-border-focus: rgba(6,182,212,0.65);
+  --accent-from:#06b6d4;
+  --accent-to:#3b82f6;
+  --fc-hover-glow: 0 0 0 1px rgba(56,189,248,0.35),0 4px 22px -6px rgba(56,189,248,0.25);
+  --fc-noise: radial-gradient(circle at 30% 20%,rgba(0,0,0,0.02),transparent 70%);
+}
+
+/* -------- DARK (ajustado estilo screenshot) -------- */
+.dark {
+  --fc-surface: linear-gradient(
+    125deg,
+    #041823 0%,
+    #051523 38%,
+    #060f1c 70%,
+    #070d18 100%
+  );
+  --fc-surface-overlay: radial-gradient(circle at 14% 18%, rgba(0,255,209,0.06), transparent 60%);
+  --fc-border: rgba(255,255,255,0.06);
+  --fc-border-strong: rgba(255,255,255,0.16);
+  --fc-shadow-a: 0 2px 4px -2px rgba(0,0,0,0.55);
+  --fc-shadow-b: 0 10px 32px -14px rgba(0,0,0,0.65);
+  --fc-text-primary: #f1f5f9;
+  --fc-text-secondary: #93a4b6;
+  --fc-divider: rgba(255,255,255,0.12);
+  --fc-focus-ring: 0 0 0 2px rgba(56,189,248,0.55);
+  --fc-input-bg: rgba(18,27,38,0.9);
+  --fc-input-border: rgba(148,163,184,0.25);
+  --fc-input-border-focus: rgba(56,189,248,0.7);
+  --fc-hover-glow: 0 0 0 1px rgba(56,189,248,0.35),0 6px 26px -8px rgba(0,180,216,0.30);
+  --fc-noise: radial-gradient(circle at 72% 68%,rgba(255,255,255,0.03),transparent 72%);
+  --accent-from:#06b6d4;
+  --accent-to:#10b981;
+}
+
+/* -------- CARD BASE -------- */
+.futuristic-card {
+  position: relative;
+  border-radius: 0.9rem;
+  background:
+    var(--fc-surface),
+    var(--fc-surface-overlay),
+    var(--fc-noise);
+  background-blend-mode: normal, overlay, normal;
+  border: 1px solid var(--fc-border);
+  box-shadow: var(--fc-shadow-a), var(--fc-shadow-b);
+  color: var(--fc-text-primary);
+  backdrop-filter: blur(14px) saturate(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(1.08);
+  transition: border-color .35s, box-shadow .45s, background-position .6s, color .35s;
+  overflow: hidden;
+}
+.futuristic-card:hover {
+  border-color: var(--fc-border-strong);
+  box-shadow: var(--fc-shadow-a), var(--fc-shadow-b), var(--fc-hover-glow);
+}
+.futuristic-card::before {
+  content:"";
+  position:absolute;
+  top:0; left:0; right:0;
+  height:3px;
+  background: linear-gradient(90deg,var(--accent-from),var(--accent-to));
+  opacity:.55;
+  transition:opacity .4s;
+}
+.futuristic-card:hover::before { opacity:.9; }
+.futuristic-card .text-muted-foreground { color: var(--fc-text-secondary) !important; }
+.futuristic-card .fc-separator,
+.futuristic-card hr {
+  background: var(--fc-divider);
+  border:0;
+  height:1px;
+}
+
+/* -------- FORM ELEMENTS -------- */
+.futuristic-card input,
+.futuristic-card textarea,
+.futuristic-card select {
+  background: var(--fc-input-bg);
+  border: 1px solid var(--fc-input-border);
+  color: var(--fc-text-primary);
+  transition: border-color .25s, box-shadow .25s, background-color .35s;
+}
+.futuristic-card input:focus,
+.futuristic-card textarea:focus,
+.futuristic-card select:focus {
+  outline:none;
+  border-color: var(--fc-input-border-focus);
+  box-shadow: var(--fc-focus-ring);
+}
+.futuristic-card input::placeholder,
+.futuristic-card textarea::placeholder {
+  color: var(--fc-text-secondary);
+  opacity:.55;
+}
+
+/* -------- BADGES -------- */
+.futuristic-card .badge-secondary {
+  background: rgba(0,0,0,0.07);
+  color: var(--fc-text-primary);
+}
+.dark .futuristic-card .badge-secondary {
+  background: rgba(255,255,255,0.12);
+  color: var(--fc-text-primary);
+}
+
+/* -------- SCROLL PREVIEW -------- */
+.embedded-ticket-scroll::-webkit-scrollbar { width:6px; }
+.embedded-ticket-scroll::-webkit-scrollbar-track { background:transparent; }
+.embedded-ticket-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.22);
+  border-radius:4px;
+}
+.dark .embedded-ticket-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.18);
+}
+
+/* -------- VARIANTES DE ACENTO OPCIONALES -------- */
+.futuristic-card.accent-cyan { --accent-from:#06b6d4; --accent-to:#3b82f6; }
+.futuristic-card.accent-emerald { --accent-from:#059669; --accent-to:#10b981; }
+.futuristic-card.accent-violet { --accent-from:#8b5cf6; --accent-to:#6366f1; }
+.futuristic-card.accent-emerald:hover,
+.futuristic-card.accent-cyan:hover,
+.futuristic-card.accent-violet:hover {
+  box-shadow: var(--fc-shadow-a), var(--fc-shadow-b),
+    0 0 0 1px color-mix(in srgb,var(--accent-to) 65%, transparent),
+    0 8px 30px -10px color-mix(in srgb,var(--accent-from) 55%, transparent);
+}
+.futuristic-card.no-accent::before { display:none; }
+
+/* -------- CLASE DEDICADA NAVY (opcional si no quieres tocar variables globales) -------- */
+.futuristic-card.navy-card {
+  background:
+    linear-gradient(125deg,#041823 0%,#051523 38%,#060f1c 70%,#070d18 100%);
+  background-blend-mode: normal;
+}

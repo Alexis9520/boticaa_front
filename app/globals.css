@@ -57,3 +57,28 @@
     @apply bg-background text-foreground;
   }
 }
+
+
+/* Panel / card efecto glass oscuro + glow sutil */
+.futuristic-card {
+  position: relative;
+  background: linear-gradient(155deg, rgba(18,24,30,0.85), rgba(10,14,18,0.75));
+  border: 1px solid rgba(255,255,255,0.06);
+  backdrop-filter: blur(12px) saturate(1.1);
+}
+.futuristic-card::before {
+  content:"";
+  position:absolute;
+  inset:-1px;
+  border-radius:inherit;
+  background:
+    linear-gradient(120deg,rgba(56,189,248,0.18),rgba(16,185,129,0.15),rgba(56,189,248,0.18));
+  opacity:0;
+  transition:opacity .5s;
+  pointer-events:none;
+  mask:linear-gradient(#fff,#fff) content-box,linear-gradient(#fff,#fff);
+  -webkit-mask:linear-gradient(#fff,#fff) content-box,linear-gradient(#fff,#fff);
+}
+.futuristic-card:hover::before {
+  opacity:.35;
+}

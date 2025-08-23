@@ -1,6 +1,12 @@
 "use client"
 
-import React, { useEffect, useMemo, useState, useCallback } from "react"
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef
+} from "react"
 import {
   Edit,
   Plus,
@@ -12,22 +18,39 @@ import {
   ChevronRight,
   LayoutList,
   Layers,
-  Box,
   Minimize2,
   Maximize2,
   Sparkles,
-  Filter
+  Filter,
+  RefreshCw,
+  Boxes,
+  ShieldAlert,
+  Activity,
+  AlertTriangle
 } from "lucide-react"
 import clsx from "clsx"
 
 import { apiUrl } from "@/components/config"
 import { fetchWithAuth } from "@/lib/api"
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/lib/use-toast"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { ComboBoxCategoria } from "@/components/ComboBoxCategoria"
 import { Label } from "@/components/ui/label"
@@ -40,7 +63,13 @@ import {
   DialogTitle,
   DialogTrigger
 } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select"
 import {
   Tooltip,
   TooltipContent,
@@ -48,7 +77,9 @@ import {
   TooltipTrigger
 } from "@/components/ui/tooltip"
 
-/* -------------------- TIPOS -------------------- */
+/* =========================================================
+   TIPOS
+========================================================= */
 type StockLote = {
   codigoStock?: string
   cantidadUnidades: number
@@ -76,7 +107,9 @@ type Producto = {
   stocks?: StockLote[]
 }
 
-/* -------------------- HELPERS -------------------- */
+/* =========================================================
+   HELPERS
+========================================================= */
 function generarCodigoLote(producto: Producto, index: number) {
   return `${producto.codigoBarras}-${index + 1}`
 }
@@ -87,8 +120,8 @@ function calcularDiasParaVencer(fecha: string) {
   if (!fecha) return 0
   const f = new Date(fecha)
   const h = today()
-  h.setHours(0,0,0,0)
-  f.setHours(0,0,0,0)
+  h.setHours(0, 0, 0, 0)
+  f.setHours(0, 0, 0, 0)
   return Math.ceil((f.getTime() - h.getTime()) / 86400000)
 }
 
@@ -99,22 +132,25 @@ function obtenerEstadoLote(fechaVencimiento: string) {
   return { estado: "vigente", color: "outline", texto: "Vigente", dias }
 }
 
-/* -------------------- COMPONENTE PRINCIPAL -------------------- */
+/* =========================================================
+   COMPONENTE PRINCIPAL
+========================================================= */
 export default function ProductosPage() {
   const { toast } = useToast()
 
   const [productos, setProductos] = useState<Producto[]>([])
   const [busqueda, setBusqueda] = useState("")
-  const [debouncedBusqueda, setDebouncedBusqueda] = useState("") // <-- debounce
+  const [debouncedBusqueda, setDebouncedBusqueda] = useState("")
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
   const [densityCompact, setDensityCompact] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [refreshTick, setRefreshTick] = useState(0)
 
   // Paginación
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [totalPages, setTotalPages] = useState(1)
   const [totalElements, setTotalElements] = useState(0)
-
 
   // Nuevo producto
   const [nuevoProducto, setNuevoProducto] = useState({
@@ -149,11 +185,15 @@ export default function ProductosPage() {
   // Modal lotes
   const [lotesModalProducto, setLotesModalProducto] = useState<Producto | null>(null)
 
+  // Snapshot previo (para futuros deltas si quisieras reactivar)
+  const prevStatsRef = useRef<any>(null)
+
   /* ------------ CARGA ------------- */
   const cargarProductos = useCallback(async () => {
     try {
+      setLoading(true)
       const q = (debouncedBusqueda || "").trim()
-      const url = `/productos?page=${page-1}&size=${pageSize}${q ? `&q=${encodeURIComponent(q)}` : ""}`
+      const url = `/productos?page=${page - 1}&size=${pageSize}${q ? `&q=${encodeURIComponent(q)}` : ""}`
       const data = await fetchWithAuth(apiUrl(url))
       setProductos(data.content || [])
       setTotalPages(data.totalPages || 1)
@@ -165,35 +205,60 @@ export default function ProductosPage() {
         description: "No se pudo cargar productos",
         variant: "destructive"
       })
+    } finally {
+      setLoading(false)
     }
   }, [toast, page, pageSize, debouncedBusqueda])
 
-  // Debounce para la búsqueda (evita llamadas en cada tecla)
   useEffect(() => {
     const t = setTimeout(() => {
       setDebouncedBusqueda(busqueda.trim())
-    }, 300) // 300ms debounce (ajusta si quieres)
+    }, 300)
     return () => clearTimeout(t)
   }, [busqueda])
 
-  // Cuando cambia la búsqueda "debounceada", resetear a página 1
   useEffect(() => {
     setPage(1)
   }, [debouncedBusqueda])
 
-  // Cargar productos cuando cambian page / pageSize / debouncedBusqueda (cargarProductos ya depende de ellos)
   useEffect(() => {
     cargarProductos()
   }, [cargarProductos])
 
-  /* ------------ FILTRO ------------- */
-  // Ahora la búsqueda la hace el servidor (q). Aquí sólo mostramos lo que devuelve el backend.
-  const pageItems = productos
+  /* ------------ MÉTRICAS SIMPLIFICADAS ------------- */
+  // Solo métricas esenciales: productos, unidades totales, stock crítico, lotes vencidos
+  const metricas = useMemo(() => {
+    let criticos = 0
+    let totalUnidades = 0
+    let vencidos = 0
+
+    productos.forEach(p => {
+      totalUnidades += p.cantidadGeneral
+      if (p.cantidadMinima !== undefined && p.cantidadGeneral <= (p.cantidadMinima ?? 0)) criticos++
+      ;(p.stocks || []).forEach(l => {
+        if (calcularDiasParaVencer(l.fechaVencimiento) < 0) vencidos++
+      })
+    })
+
+    const prev = prevStatsRef.current
+    const data = {
+      productos: productos.length,
+      unidades: totalUnidades,
+      criticos,
+      vencidos
+    }
+    prevStatsRef.current = data
+    return data
+  }, [productos])
 
   /* ------------ CRUD NUEVO ------------- */
   function agregarLoteANuevo() {
     if (!nuevoLote.cantidadUnidades || !nuevoLote.fechaVencimiento) {
-      toast({ title: "Completa lote", description: "Unidades y fecha son obligatorios", variant: "destructive" })
+      toast({
+        title: "Completa lote",
+        description: "Unidades y fecha son obligatorios",
+        variant: "destructive"
+      })
       return
     }
     setNuevoProducto(p => ({
@@ -202,34 +267,53 @@ export default function ProductosPage() {
         ...p.stocks,
         {
           ...nuevoLote,
-          codigoStock: nuevoLote.codigoStock || `L${(p.stocks.length + 1).toString().padStart(2, "0")}`
+          codigoStock:
+            nuevoLote.codigoStock ||
+            `L${(p.stocks.length + 1).toString().padStart(2, "0")}`
         }
       ]
     }))
-    setNuevoLote({ codigoStock: "", cantidadUnidades: 0, fechaVencimiento: "", precioCompra: 0 })
+    setNuevoLote({
+      codigoStock: "",
+      cantidadUnidades: 0,
+      fechaVencimiento: "",
+      precioCompra: 0
+    })
   }
 
   function eliminarLoteDeNuevo(idx: number) {
-    setNuevoProducto(p => ({ ...p, stocks: p.stocks.filter((_, i) => i !== idx) }))
+    setNuevoProducto(p => ({
+      ...p,
+      stocks: p.stocks.filter((_, i) => i !== idx)
+    }))
   }
 
   async function agregarProducto() {
     if (!nuevoProducto.codigo_barras || !nuevoProducto.nombre || !nuevoProducto.precio_venta_und) {
-      toast({ title: "Campos obligatorios", description: "Código, nombre y precio", variant: "destructive" })
+      toast({
+        title: "Campos obligatorios",
+        description: "Código, nombre y precio",
+        variant: "destructive"
+      })
       return
     }
     const stocks = nuevoProducto.stocks.map((l, idx) => ({
-      codigoStock: l.codigoStock || generarCodigoLote({
-        id: 0,
-        codigoBarras: nuevoProducto.codigo_barras,
-        nombre: nuevoProducto.nombre,
-        concentracion: nuevoProducto.concentracion,
-        cantidadGeneral: 0,
-        precioVentaUnd: Number(nuevoProducto.precio_venta_und) || 0,
-        descuento: Number(nuevoProducto.descuento) || 0,
-        laboratorio: nuevoProducto.laboratorio,
-        categoria: nuevoProducto.categoria
-      } as Producto, idx),
+      codigoStock:
+        l.codigoStock ||
+        generarCodigoLote(
+          {
+            id: 0,
+            codigoBarras: nuevoProducto.codigo_barras,
+            nombre: nuevoProducto.nombre,
+            concentracion: nuevoProducto.concentracion,
+            cantidadGeneral: 0,
+            precioVentaUnd: Number(nuevoProducto.precio_venta_und) || 0,
+            descuento: Number(nuevoProducto.descuento) || 0,
+            laboratorio: nuevoProducto.laboratorio,
+            categoria: nuevoProducto.categoria
+          } as Producto,
+          idx
+        ),
       cantidadUnidades: Number(l.cantidadUnidades) || 0,
       fechaVencimiento: l.fechaVencimiento,
       precioCompra: Number(l.precioCompra) || 0
@@ -244,7 +328,8 @@ export default function ProductosPage() {
       descuento: Number(nuevoProducto.descuento) || 0,
       laboratorio: nuevoProducto.laboratorio,
       categoria: nuevoProducto.categoria,
-      cantidadUnidadesBlister: Number(nuevoProducto.cantidad_unidades_blister) || 0,
+      cantidadUnidadesBlister:
+        Number(nuevoProducto.cantidad_unidades_blister) || 0,
       precioVentaBlister: Number(nuevoProducto.precio_venta_blister) || 0,
       principioActivo: nuevoProducto.principioActivo,
       tipoMedicamento: nuevoProducto.tipoMedicamento,
@@ -278,10 +363,19 @@ export default function ProductosPage() {
         presentacion: "",
         stocks: []
       })
-      setNuevoLote({ codigoStock: "", cantidadUnidades: 0, fechaVencimiento: "", precioCompra: 0 })
+      setNuevoLote({
+        codigoStock: "",
+        cantidadUnidades: 0,
+        fechaVencimiento: "",
+        precioCompra: 0
+      })
       cargarProductos()
     } catch {
-      toast({ title: "Error", description: "No se pudo agregar", variant: "destructive" })
+      toast({
+        title: "Error",
+        description: "No se pudo agregar",
+        variant: "destructive"
+      })
     }
   }
 
@@ -313,7 +407,11 @@ export default function ProductosPage() {
 
   function agregarLoteAEdicion() {
     if (!loteEnEdicion?.cantidadUnidades || !loteEnEdicion.fechaVencimiento) {
-      toast({ title: "Campos obligatorios", description: "Unidades y fecha", variant: "destructive" })
+      toast({
+        title: "Campos obligatorios",
+        description: "Unidades y fecha",
+        variant: "destructive"
+      })
       return
     }
     setEditandoProducto((prev: any) => ({
@@ -322,13 +420,18 @@ export default function ProductosPage() {
         ...(prev.stocks || []),
         {
           ...loteEnEdicion,
-          codigoStock:
-            loteEnEdicion.codigoStock ||
-            `L${(prev.stocks.length + 1).toString().padStart(2, "0")}`
+            codigoStock:
+              loteEnEdicion.codigoStock ||
+              `L${(prev.stocks.length + 1).toString().padStart(2, "0")}`
         }
       ]
     }))
-    setLoteEnEdicion({ codigoStock: "", cantidadUnidades: 0, fechaVencimiento: "", precioCompra: 0 })
+    setLoteEnEdicion({
+      codigoStock: "",
+      cantidadUnidades: 0,
+      fechaVencimiento: "",
+      precioCompra: 0
+    })
     setEditLoteIndex(null)
   }
 
@@ -341,9 +444,16 @@ export default function ProductosPage() {
     if (editLoteIndex === null || !loteEnEdicion) return
     setEditandoProducto((prev: any) => ({
       ...prev,
-      stocks: prev.stocks.map((l: StockLote, i: number) => (i === editLoteIndex ? { ...loteEnEdicion } : l))
+      stocks: prev.stocks.map((l: StockLote, i: number) =>
+        i === editLoteIndex ? { ...loteEnEdicion } : l
+      )
     }))
-    setLoteEnEdicion({ codigoStock: "", cantidadUnidades: 0, fechaVencimiento: "", precioCompra: 0 })
+    setLoteEnEdicion({
+      codigoStock: "",
+      cantidadUnidades: 0,
+      fechaVencimiento: "",
+      precioCompra: 0
+    })
     setEditLoteIndex(null)
   }
 
@@ -356,37 +466,52 @@ export default function ProductosPage() {
 
   async function guardarEdicion() {
     if (!editandoProducto.codigo_barras || !editandoProducto.nombre || !editandoProducto.precio_venta_und) {
-      toast({ title: "Campos obligatorios", description: "Código, nombre y precio", variant: "destructive" })
+      toast({
+        title: "Campos obligatorios",
+        description: "Código, nombre y precio",
+        variant: "destructive"
+      })
       return
     }
-    const stocks = (editandoProducto.stocks || []).map((l: StockLote, idx: number) => ({
-      codigoStock: l.codigoStock || generarCodigoLote(editandoProducto as Producto, idx),
-      cantidadUnidades: Number(l.cantidadUnidades) || 0,
-      fechaVencimiento: l.fechaVencimiento,
-      precioCompra: Number(l.precioCompra) || 0
-    }))
-    try {
-      const res = await fetchWithAuth(apiUrl(`/productos/${editandoProducto.codigo_barras}`), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          codigoBarras: editandoProducto.codigo_barras,
-          nombre: editandoProducto.nombre,
-          concentracion: editandoProducto.concentracion,
-          cantidadGeneral: stocks.reduce((s: number, l: StockLote) => s + l.cantidadUnidades, 0),
-          cantidadMinima: Number(editandoProducto.cantidad_minima) || 0,
-          precioVentaUnd: Number(editandoProducto.precio_venta_und),
-          descuento: Number(editandoProducto.descuento) || 0,
-          laboratorio: editandoProducto.laboratorio,
-          categoria: editandoProducto.categoria,
-          cantidadUnidadesBlister: Number(editandoProducto.cantidad_unidades_blister) || 0,
-          precioVentaBlister: Number(editandoProducto.precio_venta_blister) || 0,
-          principioActivo: editandoProducto.principioActivo,
-          tipoMedicamento: editandoProducto.tipoMedicamento,
-          presentacion: editandoProducto.presentacion,
-          stocks
-        })
+    const stocks = (editandoProducto.stocks || []).map(
+      (l: StockLote, idx: number) => ({
+        codigoStock:
+          l.codigoStock || generarCodigoLote(editandoProducto as Producto, idx),
+        cantidadUnidades: Number(l.cantidadUnidades) || 0,
+        fechaVencimiento: l.fechaVencimiento,
+        precioCompra: Number(l.precioCompra) || 0
       })
+    )
+    try {
+      const res = await fetchWithAuth(
+        apiUrl(`/productos/${editandoProducto.codigo_barras}`),
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            codigoBarras: editandoProducto.codigo_barras,
+            nombre: editandoProducto.nombre,
+            concentracion: editandoProducto.concentracion,
+            cantidadGeneral: stocks.reduce(
+              (s: number, l: StockLote) => s + l.cantidadUnidades,
+              0
+            ),
+            cantidadMinima: Number(editandoProducto.cantidad_minima) || 0,
+            precioVentaUnd: Number(editandoProducto.precio_venta_und),
+            descuento: Number(editandoProducto.descuento) || 0,
+            laboratorio: editandoProducto.laboratorio,
+            categoria: editandoProducto.categoria,
+            cantidadUnidadesBlister:
+              Number(editandoProducto.cantidad_unidades_blister) || 0,
+            precioVentaBlister:
+              Number(editandoProducto.precio_venta_blister) || 0,
+            principioActivo: editandoProducto.principioActivo,
+            tipoMedicamento: editandoProducto.tipoMedicamento,
+            presentacion: editandoProducto.presentacion,
+            stocks
+          })
+        }
+      )
       if (res) {
         toast({ title: "Producto actualizado", description: "Cambios guardados" })
         setProductos(prev =>
@@ -398,20 +523,34 @@ export default function ProductosPage() {
         )
         cerrarEdicion()
       } else {
-        toast({ title: "Error", description: "No se guardó", variant: "destructive" })
+        toast({
+          title: "Error",
+          description: "No se guardó",
+          variant: "destructive"
+        })
       }
     } catch {
-      toast({ title: "Error", description: "Error de conexión", variant: "destructive" })
+      toast({
+        title: "Error",
+        description: "Error de conexión",
+        variant: "destructive"
+      })
     }
   }
 
   async function eliminarProducto(codigoBarras: string) {
     try {
-      await fetchWithAuth(apiUrl(`/productos/${codigoBarras}`), { method: "DELETE" })
+      await fetchWithAuth(apiUrl(`/productos/${codigoBarras}`), {
+        method: "DELETE"
+      })
       toast({ title: "Producto eliminado" })
       cargarProductos()
     } catch (err: any) {
-      toast({ title: "Error", description: err?.message || "No se pudo eliminar", variant: "destructive" })
+      toast({
+        title: "Error",
+        description: err?.message || "No se pudo eliminar",
+        variant: "destructive"
+      })
     }
   }
 
@@ -434,7 +573,10 @@ export default function ProductosPage() {
         <span className="text-muted-foreground">Min:</span>
         <span className="font-medium">{producto.cantidadMinima}</span>
         {esCritico && (
-          <Badge variant="destructive" className="h-4 px-1.5 text-[9px] rounded-full flex items-center gap-1">
+          <Badge
+            variant="destructive"
+            className="h-4 px-1.5 text-[9px] rounded-full flex items-center gap-1"
+          >
             <AlertCircle className="w-3 h-3" /> Crítico
           </Badge>
         )}
@@ -445,17 +587,20 @@ export default function ProductosPage() {
   function stockBar(p: Producto) {
     const min = p.cantidadMinima ?? 0
     const current = p.cantidadGeneral
-    const pct = min === 0 ? 100 : Math.min(100, Math.round((current / (min * 2 || 1)) * 100))
+    const pct =
+      min === 0
+        ? 100
+        : Math.min(100, Math.round((current / (min * 2 || 1)) * 100))
     const color =
       current <= min
         ? "bg-red-500"
         : current <= min * 2
-          ? "bg-amber-500"
-          : "bg-emerald-500"
+        ? "bg-amber-500"
+        : "bg-emerald-500"
 
     return (
       <div className="space-y-1 w-32">
-        <div className="h-1.5 rounded bg-gradient-to-r from-zinc-200/50 to-zinc-300/40 dark:from-zinc-700 dark:to-zinc-600 overflow-hidden">
+        <div className="h-1.5 rounded bg-gradient-to-r from-slate-300/40 to-slate-400/30 dark:from-slate-700 dark:to-slate-600 overflow-hidden">
           <div
             className={clsx("h-full transition-all duration-500 ease-out", color)}
             style={{ width: `${pct}%` }}
@@ -471,122 +616,318 @@ export default function ProductosPage() {
 
   function resumenLotes(producto: Producto) {
     const lotes = producto.stocks || []
-    if (!lotes.length) return <span className="text-[11px] text-muted-foreground">Sin lotes</span>
+    if (!lotes.length)
+      return <span className="text-[11px] text-muted-foreground">Sin lotes</span>
     const total = lotes.reduce((s, l) => s + l.cantidadUnidades, 0)
-    const proximos = lotes.map(l => calcularDiasParaVencer(l.fechaVencimiento)).sort((a,b)=>a-b)
+    const proximos = lotes
+      .map(l => calcularDiasParaVencer(l.fechaVencimiento))
+      .sort((a, b) => a - b)
     const d = proximos[0]
     const estado =
-      d < 0 ? { label: "Vencido", cls: "text-red-600" }
-        : d <= 30 ? { label: `${d} d`, cls: "text-amber-500" }
-          : { label: `> ${d} d`, cls: "text-muted-foreground" }
+      d < 0
+        ? { label: "Vencido", cls: "text-red-600" }
+        : d <= 30
+        ? { label: `${d} d`, cls: "text-amber-500" }
+        : { label: `> ${d} d`, cls: "text-muted-foreground" }
 
     return (
       <div className="flex flex-col gap-0.5">
         <div className="flex items-center gap-1 flex-wrap">
-          <Badge variant="outline" className="px-1.5 h-5 text-[10px] rounded-full">{lotes.length} lote{lotes.length!==1 && "s"}</Badge>
-          <Badge variant="secondary" className="px-1.5 h-5 text-[10px] rounded-full">{total} u</Badge>
+          <Badge
+            variant="outline"
+            className="px-1.5 h-5 text-[10px] rounded-full"
+          >
+            {lotes.length} lote{lotes.length !== 1 && "s"}
+          </Badge>
+          <Badge
+            variant="secondary"
+            className="px-1.5 h-5 text-[10px] rounded-full"
+          >
+            {total} u
+          </Badge>
         </div>
-        <span className={clsx("text-[10px] font-medium", estado.cls)}>{estado.label}</span>
+        <span className={clsx("text-[10px] font-medium", estado.cls)}>
+          {estado.label}
+        </span>
       </div>
     )
   }
 
-  /* ------------ RENDER ------------- */
   const startIndex = (page - 1) * pageSize + 1
   const endIndex = startIndex + productos.length - 1
+  const pageItems = productos
 
+  /* =========================================================
+     RENDER
+  ========================================================= */
   return (
-    <div className="flex flex-col gap-6 relative">
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_15%_20%,hsl(var(--primary)/0.08),transparent_55%),radial-gradient(circle_at_85%_70%,hsl(var(--secondary)/0.10),transparent_60%)]" />
+    <div className="relative flex flex-col gap-8 pb-20">
+      {/* Fondo simplificado (menos colores) */}
+      <div className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(56,189,248,0.12),transparent_60%),radial-gradient(circle_at_80%_70%,rgba(99,102,241,0.10),transparent_65%),linear-gradient(140deg,rgba(255,255,255,0.03),transparent_40%,rgba(255,255,255,0.02)_70%,transparent)]" />
+        <div className="absolute inset-0 opacity-[0.06] [background:repeating-linear-gradient(45deg,rgba(255,255,255,0.10)_0_2px,transparent_2px_10px)]" />
+      </div>
 
-      {/* HEADER */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
-        <div className="space-y-1">
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/60 flex items-center gap-2">
+      {/* Header: SIN sombra en el título */}
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="space-y-2">
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-cyan-300 to-cyan-100">
             Gestión de Productos
-            <Sparkles className="h-5 w-5 text-primary/70" />
           </h1>
           <p className="text-sm text-muted-foreground">
             Administra el catálogo y lotes de inventario
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <DensityToggle compact={densityCompact} onChange={()=> setDensityCompact(d=>!d)} />
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => {
+              cargarProductos()
+              setRefreshTick(t => t + 1)
+            }}
+          >
+            <RefreshCw
+              className={clsx(
+                "h-4 w-4",
+                loading && "animate-spin"
+              )}
+            />
+            Refrescar
+          </Button>
+            <DensityToggle
+            compact={densityCompact}
+            onChange={() => setDensityCompact(d => !d)}
+          />
           <Dialog>
             <DialogTrigger asChild>
               <Button className="gap-2">
                 <Plus className="h-4 w-4" /> Nuevo
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-6xl w-full">
+            <DialogContent className="max-w-4xl">
               <DialogHeader>
-                <DialogTitle>Nuevo Producto</DialogTitle>
-                <DialogDescription>Registra un producto y sus lotes iniciales</DialogDescription>
+                <DialogTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-cyan-400" />
+                  Nuevo Producto
+                </DialogTitle>
+                <DialogDescription>
+                  Registra un producto y lotes iniciales
+                </DialogDescription>
               </DialogHeader>
 
-              <div className="grid md:grid-cols-2 gap-10 max-h-[70vh] overflow-y-auto pr-2">
+              <div className="grid md:grid-cols-2 gap-10 max-h-[65vh] overflow-y-auto pr-2">
                 {/* Columna 1 */}
                 <section className="space-y-6">
                   <SectionTitle title="Datos Generales" />
-                  <Field label="Código de barras *" placeholder="Ej: 7750112345678" value={nuevoProducto.codigo_barras} onChange={v=>setNuevoProducto(p=>({...p, codigo_barras:v}))} />
-                  <Field label="Nombre *" placeholder="Ej: Amoxicilina 500" value={nuevoProducto.nombre} onChange={v=>setNuevoProducto(p=>({...p, nombre:v}))} />
-                  <Field label="Concentración" placeholder="Ej: 500mg / 5ml" value={nuevoProducto.concentracion} onChange={v=>setNuevoProducto(p=>({...p, concentracion:v}))} />
+                  <Field
+                    label="Código de barras *"
+                    value={nuevoProducto.codigo_barras}
+                    onChange={v =>
+                      setNuevoProducto(p => ({ ...p, codigo_barras: v }))
+                    }
+                  />
+                  <Field
+                    label="Nombre *"
+                    value={nuevoProducto.nombre}
+                    onChange={v =>
+                      setNuevoProducto(p => ({ ...p, nombre: v }))
+                    }
+                  />
+                  <Field
+                    label="Concentración"
+                    value={nuevoProducto.concentracion}
+                    onChange={v =>
+                      setNuevoProducto(p => ({ ...p, concentracion: v }))
+                    }
+                  />
                   <div className="space-y-2">
                     <Label className="text-xs font-medium">Categoría</Label>
                     <ComboBoxCategoria
                       value={nuevoProducto.categoria}
-                      onChange={categoria => setNuevoProducto(p=>({...p, categoria}))}
+                      onChange={categoria =>
+                        setNuevoProducto(p => ({ ...p, categoria }))
+                      }
                     />
                   </div>
-                  <Field label="Principio activo" placeholder="Ej: Amoxicilina" value={nuevoProducto.principioActivo} onChange={v=>setNuevoProducto(p=>({...p, principioActivo:v}))} />
+                  <Field
+                    label="Principio activo"
+                    value={nuevoProducto.principioActivo}
+                    onChange={v =>
+                      setNuevoProducto(p => ({ ...p, principioActivo: v }))
+                    }
+                  />
                   <div className="space-y-2">
                     <Label className="text-xs font-medium">Tipo</Label>
                     <Select
                       value={nuevoProducto.tipoMedicamento}
-                      onValueChange={value => setNuevoProducto(p=>({...p, tipoMedicamento:value}))}
+                      onValueChange={value =>
+                        setNuevoProducto(p => ({ ...p, tipoMedicamento: value }))
+                      }
                     >
-                      <SelectTrigger><SelectValue placeholder="Elige tipo" /></SelectTrigger>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Tipo" />
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="GENÉRICO">Genérico</SelectItem>
                         <SelectItem value="MARCA">Marca</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <Field label="Presentación" placeholder="Ej: Caja x 10 cápsulas" value={nuevoProducto.presentacion} onChange={v=>setNuevoProducto(p=>({...p, presentacion:v}))} />
-                  <Field label="Laboratorio" placeholder="Ej: ACME Labs" value={nuevoProducto.laboratorio} onChange={v=>setNuevoProducto(p=>({...p, laboratorio:v}))} />
-                  <Field label="Stock mínimo" placeholder="Ej: 20" type="number" value={nuevoProducto.cantidad_minima} onChange={v=>setNuevoProducto(p=>({...p, cantidad_minima:v}))} />
+                  <Field
+                    label="Presentación"
+                    value={nuevoProducto.presentacion}
+                    onChange={v =>
+                      setNuevoProducto(p => ({ ...p, presentacion: v }))
+                    }
+                  />
+                  <Field
+                    label="Laboratorio"
+                    value={nuevoProducto.laboratorio}
+                    onChange={v =>
+                      setNuevoProducto(p => ({ ...p, laboratorio: v }))
+                    }
+                  />
+                  <Field
+                    label="Stock mínimo"
+                    type="number"
+                    value={nuevoProducto.cantidad_minima}
+                    onChange={v =>
+                      setNuevoProducto(p => ({ ...p, cantidad_minima: v }))
+                    }
+                  />
                 </section>
 
                 {/* Columna 2 */}
                 <section className="space-y-6">
-                  <SectionTitle title="Unidad / Precios" />
+                  <SectionTitle title="Precios / Lotes" />
                   <div className="grid grid-cols-2 gap-4">
-                    <Field label="Unidades/blister" placeholder="Ej: 10" type="number" value={nuevoProducto.cantidad_unidades_blister} onChange={v=>setNuevoProducto(p=>({...p, cantidad_unidades_blister:v}))} />
-                    <Field label="Precio blister" placeholder="Ej: 12.50" type="number" step="0.01" value={nuevoProducto.precio_venta_blister} onChange={v=>setNuevoProducto(p=>({...p, precio_venta_blister:v}))} />
+                    <Field
+                      label="Unid/blister"
+                      type="number"
+                      value={nuevoProducto.cantidad_unidades_blister}
+                      onChange={v =>
+                        setNuevoProducto(p => ({
+                          ...p,
+                          cantidad_unidades_blister: v
+                        }))
+                      }
+                    />
+                    <Field
+                      label="Precio blister"
+                      type="number"
+                      step="0.01"
+                      value={nuevoProducto.precio_venta_blister}
+                      onChange={v =>
+                        setNuevoProducto(p => ({
+                          ...p,
+                          precio_venta_blister: v
+                        }))
+                      }
+                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <Field label="Precio venta *" placeholder="Precio unitario (S/)" type="number" step="0.01" value={nuevoProducto.precio_venta_und} onChange={v=>setNuevoProducto(p=>({...p, precio_venta_und:v}))} />
-                    <Field label="Precio descuento" placeholder="Opcional (S/)" type="number" step="0.01" value={nuevoProducto.descuento} onChange={v=>setNuevoProducto(p=>({...p, descuento:v}))} />
+                    <Field
+                      label="Precio venta *"
+                      type="number"
+                      step="0.01"
+                      value={nuevoProducto.precio_venta_und}
+                      onChange={v =>
+                        setNuevoProducto(p => ({
+                          ...p,
+                          precio_venta_und: v
+                        }))
+                      }
+                    />
+                    <Field
+                      label="Descuento"
+                      type="number"
+                      step="0.01"
+                      value={nuevoProducto.descuento}
+                      onChange={v =>
+                        setNuevoProducto(p => ({ ...p, descuento: v }))
+                      }
+                    />
                   </div>
 
                   <div className="space-y-3 pt-2">
                     <SectionTitle title="Lotes iniciales" small />
                     <div className="grid grid-cols-4 gap-3">
-                      <Input placeholder="Código lote (opcional)" className="col-span-2" value={nuevoLote.codigoStock || ""} onChange={e=>setNuevoLote(l=>({...l, codigoStock:e.target.value}))} />
-                      <Input placeholder="Unidades" type="number" min={1} className="col-span-2" value={nuevoLote.cantidadUnidades || ""} onChange={e=>setNuevoLote(l=>({...l, cantidadUnidades:Number(e.target.value)}))} />
-                      <Input type="date" className="col-span-2" value={nuevoLote.fechaVencimiento} onChange={e=>setNuevoLote(l=>({...l, fechaVencimiento:e.target.value}))} />
-                      <Input placeholder="Precio compra (S/)" type="number" step="0.01" min={0} className="col-span-2" value={nuevoLote.precioCompra || ""} onChange={e=>setNuevoLote(l=>({...l, precioCompra:Number(e.target.value)}))} />
+                      <Input
+                        placeholder="Código (opt)"
+                        className="col-span-2"
+                        value={nuevoLote.codigoStock || ""}
+                        onChange={e =>
+                          setNuevoLote(l => ({
+                            ...l,
+                            codigoStock: e.target.value
+                          }))
+                        }
+                      />
+                      <Input
+                        placeholder="Unid"
+                        type="number"
+                        min={1}
+                        className="col-span-2"
+                        value={nuevoLote.cantidadUnidades || ""}
+                        onChange={e =>
+                          setNuevoLote(l => ({
+                            ...l,
+                            cantidadUnidades: Number(e.target.value)
+                          }))
+                        }
+                      />
+                      <Input
+                        type="date"
+                        className="col-span-2"
+                        value={nuevoLote.fechaVencimiento}
+                        onChange={e =>
+                          setNuevoLote(l => ({
+                            ...l,
+                            fechaVencimiento: e.target.value
+                          }))
+                        }
+                      />
+                      <Input
+                        placeholder="Compra S/"
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        className="col-span-2"
+                        value={nuevoLote.precioCompra || ""}
+                        onChange={e =>
+                          setNuevoLote(l => ({
+                            ...l,
+                            precioCompra: Number(e.target.value)
+                          }))
+                        }
+                      />
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button type="button" variant="secondary" size="sm" onClick={agregarLoteANuevo}>Agregar lote</Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={agregarLoteANuevo}
+                      >
+                        Agregar lote
+                      </Button>
                       <span className="text-xs text-muted-foreground">
-                        Stock total: {nuevoProducto.stocks.reduce((s,l)=>s+l.cantidadUnidades,0)} u
+                        Total:{" "}
+                        {nuevoProducto.stocks.reduce(
+                          (s, l) => s + l.cantidadUnidades,
+                          0
+                        )}{" "}
+                        u
                       </span>
                     </div>
-                    <div className="rounded border bg-muted/40 backdrop-blur-sm max-h-48 overflow-auto">
+                    <div className="rounded border bg-muted/30 backdrop-blur-sm max-h-44 overflow-auto">
                       {nuevoProducto.stocks.length === 0 && (
-                        <div className="text-xs p-4 text-muted-foreground">Sin lotes agregados</div>
+                        <div className="text-xs p-4 text-muted-foreground">
+                          Sin lotes
+                        </div>
                       )}
                       {nuevoProducto.stocks.length > 0 && (
                         <Table className="text-xs">
@@ -595,19 +936,38 @@ export default function ProductosPage() {
                               <TableHead className="py-1">Lote</TableHead>
                               <TableHead className="py-1">Unid</TableHead>
                               <TableHead className="py-1">Vence</TableHead>
-                              <TableHead className="py-1">Compra (S/)</TableHead>
-                              <TableHead className="py-1 text-right">Quitar</TableHead>
+                              <TableHead className="py-1">
+                                Compra (S/)
+                              </TableHead>
+                              <TableHead className="py-1 text-right">
+                                Quitar
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {nuevoProducto.stocks.map((l, idx)=>(
-                              <TableRow key={l.codigoStock || `${l.fechaVencimiento}-${idx}`}>
-                                <TableCell className="py-1">{l.codigoStock}</TableCell>
-                                <TableCell className="py-1">{l.cantidadUnidades}</TableCell>
-                                <TableCell className="py-1">{l.fechaVencimiento}</TableCell>
-                                <TableCell className="py-1">S/ {Number(l.precioCompra).toFixed(2)}</TableCell>
+                            {nuevoProducto.stocks.map((l, idx) => (
+                              <TableRow
+                                key={l.codigoStock || `${l.fechaVencimiento}-${idx}`}
+                              >
+                                <TableCell className="py-1">
+                                  {l.codigoStock}
+                                </TableCell>
+                                <TableCell className="py-1">
+                                  {l.cantidadUnidades}
+                                </TableCell>
+                                <TableCell className="py-1">
+                                  {l.fechaVencimiento}
+                                </TableCell>
+                                <TableCell className="py-1">
+                                  S/ {Number(l.precioCompra).toFixed(2)}
+                                </TableCell>
                                 <TableCell className="py-1 text-right">
-                                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={()=>eliminarLoteDeNuevo(idx)}>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    onClick={() => eliminarLoteDeNuevo(idx)}
+                                  >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </TableCell>
@@ -621,57 +981,111 @@ export default function ProductosPage() {
                 </section>
               </div>
 
-              <DialogFooter className="pt-4">
-                <Button onClick={agregarProducto}>Guardar Producto</Button>
+              <DialogFooter className="pt-2">
+                <Button onClick={agregarProducto}>Guardar</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
       </div>
 
+      {/* MÉTRICAS REDUCIDAS */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricCard
+          icon={Boxes}
+          label="Productos"
+          value={metricas.productos}
+          accent="from-cyan-400/25 to-cyan-700/10"
+        />
+        <MetricCard
+          icon={Activity}
+          label="Unidades"
+          value={metricas.unidades}
+          accent="from-indigo-400/25 to-indigo-700/10"
+        />
+        <MetricCard
+          icon={ShieldAlert}
+          label="Stock crítico"
+          value={metricas.criticos}
+          accent="from-amber-400/30 to-amber-700/10"
+          warn={metricas.criticos > 0}
+        />
+        <MetricCard
+          icon={AlertTriangle}
+          label="Lotes vencidos"
+          value={metricas.vencidos}
+          accent="from-red-400/30 to-red-700/10"
+          danger={metricas.vencidos > 0}
+        />
+      </div>
+
+      {/* BUSCADOR & CONTROLES */}
+      <div className="flex flex-col md:flex-row gap-5 md:items-center justify-between">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar código, nombre, categoría, laboratorio..."
+            className="pl-9 pr-24 bg-background/60 backdrop-blur-sm"
+            value={busqueda}
+            onChange={e => setBusqueda(e.target.value)}
+          />
+          <div className="absolute right-3 top-1.5 flex items-center gap-2 text-[10px] text-muted-foreground">
+            {loading ? (
+              <span className="animate-pulse">Cargando...</span>
+            ) : (
+              <span>{totalElements}</span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Filter className="h-4 w-4" />
+            <span className="hidden sm:inline">Filas / página</span>
+          </div>
+          <Select
+            value={String(pageSize)}
+            onValueChange={v => {
+              setPageSize(Number(v))
+              setPage(1)
+            }}
+          >
+            <SelectTrigger className="w-[110px]">
+              <SelectValue placeholder="Tamaño" />
+            </SelectTrigger>
+            <SelectContent>
+              {[5, 10, 25, 50].map(s => (
+                <SelectItem key={s} value={String(s)}>
+                  {s} / pág
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">
+            {startIndex}-{endIndex} de {totalElements}
+          </span>
+        </div>
+      </div>
+
       {/* TABLA */}
-      <Card className="border-border/60 shadow-sm relative overflow-hidden">
-        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary via-primary/40 to-transparent" />
+      <Card className="relative overflow-hidden border-border/60">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold">Catálogo de Productos</CardTitle>
-          <CardDescription>Vista consolidada. Expande para ver detalles y lotes.</CardDescription>
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <LayoutList className="h-4 w-4 text-cyan-400" />
+            Catálogo
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Expande para ver detalles y lotes.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col md:flex-row gap-4 mb-5 md:items-center">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar código, nombre, categoría, laboratorio..."
-                className="pl-8"
-                value={busqueda}
-                onChange={e=>setBusqueda(e.target.value)}
-              />
-              <div className="absolute right-2 top-2 text-[10px] text-muted-foreground">
-                {totalElements}
-              </div>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Filter className="h-4 w-4" />
-                <span className="hidden sm:inline">Filas / página</span>
-              </div>
-              <Select value={String(pageSize)} onValueChange={v=>{ setPageSize(Number(v)); setPage(1) }}>
-                <SelectTrigger className="w-[120px]"><SelectValue placeholder="Tamaño" /></SelectTrigger>
-                <SelectContent>
-                  {[5,10,25,50,100].map(s=>(
-                    <SelectItem key={s} value={String(s)}>{s} / pág</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <span className="text-xs text-muted-foreground whitespace-nowrap">
-                {startIndex}-{endIndex} de {totalElements}
-              </span>
-            </div>
-          </div>
-
-          <div className="rounded-xl border bg-card/70 backdrop-blur-sm overflow-x-auto">
-            <Table className={clsx(densityCompact && "[&_td]:py-1 [&_th]:py-2 text-sm")}>
-              <TableHeader className="bg-muted/40 backdrop-blur-sm">
+          <div className="rounded-xl border bg-background/70 backdrop-blur-md overflow-x-auto">
+            <Table
+              className={clsx(
+                "transition-all",
+                densityCompact && "[&_td]:py-1 [&_th]:py-2 text-sm"
+              )}
+            >
+              <TableHeader className="bg-muted/40 backdrop-blur-md">
                 <TableRow>
                   <TableHead className="w-8" />
                   <TableHead>Código</TableHead>
@@ -696,38 +1110,56 @@ export default function ProductosPage() {
                           expanded && "bg-muted/30",
                           "hover:bg-muted/25"
                         )}
-                        onDoubleClick={()=>toggleExpand(p.codigoBarras)}
+                        onDoubleClick={() => toggleExpand(p.codigoBarras)}
                       >
                         <TableCell className="p-0 pl-2">
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7"
-                            onClick={()=>toggleExpand(p.codigoBarras)}
+                            onClick={() => toggleExpand(p.codigoBarras)}
                             aria-label={expanded ? "Contraer" : "Expandir"}
                           >
-                            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            {expanded ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
                           </Button>
                         </TableCell>
-                        <TableCell className="font-medium tabular-nums">{p.codigoBarras}</TableCell>
+                        <TableCell className="font-medium tabular-nums">
+                          {p.codigoBarras}
+                        </TableCell>
                         <TableCell>
                           <div className="flex flex-col">
-                            <span className="font-medium leading-tight">{p.nombre}</span>
+                            <span className="font-medium leading-tight">
+                              {p.nombre}
+                            </span>
                             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                               <span>{p.concentracion || "—"}</span>
                               <Badge
-                                variant={p.tipoMedicamento === "GENÉRICO" ? "outline" : "secondary"}
+                                variant={
+                                  p.tipoMedicamento === "GENÉRICO"
+                                    ? "outline"
+                                    : "secondary"
+                                }
                                 className="px-1.5 h-4 text-[10px] rounded-full"
                               >
-                                {p.tipoMedicamento === "GENÉRICO" ? "Genérico" : "Marca"}
+                                {p.tipoMedicamento === "GENÉRICO"
+                                  ? "Genérico"
+                                  : "Marca"}
                               </Badge>
                             </div>
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className="text-[11px]">
-                            <span className="font-medium">{p.categoria || "—"}</span>
-                            <div className="text-muted-foreground">{p.laboratorio || "—"}</div>
+                            <span className="font-medium">
+                              {p.categoria || "—"}
+                            </span>
+                            <div className="text-muted-foreground">
+                              {p.laboratorio || "—"}
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -736,12 +1168,19 @@ export default function ProductosPage() {
                               <TooltipTrigger asChild>
                                 <div className="text-[11px] max-w-[160px] truncate">
                                   {p.presentacion || "—"}
-                                  {p.principioActivo && <span className="text-muted-foreground ml-1">· {p.principioActivo}</span>}
+                                  {p.principioActivo && (
+                                    <span className="text-muted-foreground ml-1">
+                                      · {p.principioActivo}
+                                    </span>
+                                  )}
                                 </div>
                               </TooltipTrigger>
                               {p.principioActivo && (
                                 <TooltipContent>
-                                  <p className="text-xs">Principio activo: <strong>{p.principioActivo}</strong></p>
+                                  <p className="text-xs">
+                                    Principio activo:{" "}
+                                    <strong>{p.principioActivo}</strong>
+                                  </p>
                                 </TooltipContent>
                               )}
                             </Tooltip>
@@ -754,15 +1193,23 @@ export default function ProductosPage() {
                         <TableCell>
                           {p.cantidadUnidadesBlister ? (
                             <div className="flex flex-col gap-0.5 text-[11px]">
-                              <Badge variant="outline" className="px-1.5 h-5 rounded-full">{p.cantidadUnidadesBlister} u</Badge>
+                              <Badge
+                                variant="outline"
+                                className="px-1.5 h-5 rounded-full"
+                              >
+                                {p.cantidadUnidadesBlister} u
+                              </Badge>
                               {p.precioVentaBlister && (
                                 <span className="text-muted-foreground tabular-nums">
-                                  S/ {Number(p.precioVentaBlister).toFixed(2)}
+                                  S/{" "}
+                                  {Number(p.precioVentaBlister).toFixed(2)}
                                 </span>
                               )}
                             </div>
                           ) : (
-                            <span className="text-[11px] text-muted-foreground">—</span>
+                            <span className="text-[11px] text-muted-foreground">
+                              —
+                            </span>
                           )}
                         </TableCell>
                         <TableCell>
@@ -778,10 +1225,20 @@ export default function ProductosPage() {
                         <TableCell>{resumenLotes(p)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={()=>editarProducto(p)}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => editarProducto(p)}
+                            >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={()=>eliminarProducto(p.codigoBarras)}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => eliminarProducto(p.codigoBarras)}
+                            >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -798,10 +1255,22 @@ export default function ProductosPage() {
                                 <h4 className="font-semibold flex items-center gap-1 text-[13px]">
                                   <LayoutList className="h-4 w-4" /> Detalles
                                 </h4>
-                                <Detail label="Principio activo" value={p.principioActivo || "—"} />
-                                <Detail label="Presentación" value={p.presentacion || "—"} />
-                                <Detail label="Tipo" value={p.tipoMedicamento || "—"} />
-                                <Detail label="Laboratorio" value={p.laboratorio || "—"} />
+                                <Detail
+                                  label="Principio activo"
+                                  value={p.principioActivo || "—"}
+                                />
+                                <Detail
+                                  label="Presentación"
+                                  value={p.presentacion || "—"}
+                                />
+                                <Detail
+                                  label="Tipo"
+                                  value={p.tipoMedicamento || "—"}
+                                />
+                                <Detail
+                                  label="Laboratorio"
+                                  value={p.laboratorio || "—"}
+                                />
                               </div>
 
                               {/* Lotes */}
@@ -810,36 +1279,69 @@ export default function ProductosPage() {
                                   <Package className="h-4 w-4" /> Lotes
                                 </h4>
                                 {(p.stocks?.length ?? 0) === 0 && (
-                                  <div className="text-xs text-muted-foreground">Sin lotes</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    Sin lotes
+                                  </div>
                                 )}
                                 {(p.stocks?.length ?? 0) > 0 && (
-                                  <div className="max-h-52 overflow-auto rounded-lg border bg-background/60 backdrop-blur-sm">
+                                  <div className="max-h-48 overflow-auto rounded-lg border bg-background/60 backdrop-blur-sm">
                                     <Table className="text-[11px]">
                                       <TableHeader>
                                         <TableRow>
-                                          <TableHead className="py-1">Lote</TableHead>
-                                          <TableHead className="py-1">Unid</TableHead>
-                                          <TableHead className="py-1">Venc</TableHead>
-                                          <TableHead className="py-1">Compra</TableHead>
-                                          <TableHead className="py-1">Estado</TableHead>
+                                          <TableHead className="py-1">
+                                            Lote
+                                          </TableHead>
+                                          <TableHead className="py-1">
+                                            Unid
+                                          </TableHead>
+                                          <TableHead className="py-1">
+                                            Venc
+                                          </TableHead>
+                                          <TableHead className="py-1">
+                                            Compra
+                                          </TableHead>
+                                          <TableHead className="py-1">
+                                            Estado
+                                          </TableHead>
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
                                         {p.stocks?.map(l => {
-                                          const est = obtenerEstadoLote(l.fechaVencimiento)
+                                          const est = obtenerEstadoLote(
+                                            l.fechaVencimiento
+                                          )
                                           return (
-                                            <TableRow key={l.codigoStock || `${l.fechaVencimiento}-${l.cantidadUnidades}`}>
-                                              <TableCell className="py-1">{l.codigoStock}</TableCell>
-                                              <TableCell className="py-1 tabular-nums">{l.cantidadUnidades}</TableCell>
+                                            <TableRow
+                                              key={
+                                                l.codigoStock ||
+                                                `${l.fechaVencimiento}-${l.cantidadUnidades}`
+                                              }
+                                            >
                                               <TableCell className="py-1">
-                                                {new Date(l.fechaVencimiento).toLocaleDateString("es-PE")}
+                                                {l.codigoStock}
                                               </TableCell>
                                               <TableCell className="py-1 tabular-nums">
-                                                S/ {Number(l.precioCompra).toFixed(2)}
+                                                {l.cantidadUnidades}
                                               </TableCell>
                                               <TableCell className="py-1">
-                                                <Badge variant={est.color as any} className="h-5 px-1.5 text-[10px] rounded-full">
-                                                  {est.texto} {est.dias >= 0 && `(${est.dias}d)`}
+                                                {new Date(
+                                                  l.fechaVencimiento
+                                                ).toLocaleDateString("es-PE")}
+                                              </TableCell>
+                                              <TableCell className="py-1 tabular-nums">
+                                                S/{" "}
+                                                {Number(
+                                                  l.precioCompra
+                                                ).toFixed(2)}
+                                              </TableCell>
+                                              <TableCell className="py-1">
+                                                <Badge
+                                                  variant={est.color as any}
+                                                  className="h-5 px-1.5 text-[10px] rounded-full"
+                                                >
+                                                  {est.texto}{" "}
+                                                  {est.dias >= 0 &&
+                                                    `(${est.dias}d)`}
                                                 </Badge>
                                               </TableCell>
                                             </TableRow>
@@ -854,22 +1356,44 @@ export default function ProductosPage() {
                               {/* Resumen */}
                               <div className="space-y-3 lg:col-span-2">
                                 <h4 className="font-semibold flex items-center gap-1 text-[13px]">
-                                  <Layers className="h-4 w-4" /> Resumen Inventario
+                                  <Layers className="h-4 w-4" /> Resumen
                                 </h4>
                                 <div className="grid grid-cols-2 gap-2 text-[11px]">
-                                  <InfoBox label="Unidades totales" value={p.cantidadGeneral} />
-                                  <InfoBox label="Stock mínimo" value={p.cantidadMinima ?? 0} />
+                                  <InfoBox
+                                    label="Unidades totales"
+                                    value={p.cantidadGeneral}
+                                  />
+                                  <InfoBox
+                                    label="Stock mínimo"
+                                    value={p.cantidadMinima ?? 0}
+                                  />
                                   <InfoBox
                                     label="Valor compra"
-                                    value={`S/ ${(p.stocks || []).reduce((s,l)=>s + l.cantidadUnidades*l.precioCompra,0).toFixed(2)}`}
+                                    value={`S/ ${(p.stocks || [])
+                                      .reduce(
+                                        (s, l) =>
+                                          s +
+                                          l.cantidadUnidades * l.precioCompra,
+                                        0
+                                      )
+                                      .toFixed(2)}`}
                                     wide
                                   />
-                                  <InfoBox label="Lotes" value={p.stocks?.length || 0} />
+                                  <InfoBox
+                                    label="Lotes"
+                                    value={p.stocks?.length || 0}
+                                  />
                                   <InfoBox
                                     label="Próx. Venc."
                                     value={
                                       p.stocks?.length
-                                        ? Math.min(...p.stocks.map(l=>calcularDiasParaVencer(l.fechaVencimiento))) + " d"
+                                        ? Math.min(
+                                            ...p.stocks.map(l =>
+                                              calcularDiasParaVencer(
+                                                l.fechaVencimiento
+                                              )
+                                            )
+                                          ) + " d"
                                         : "—"
                                     }
                                   />
@@ -878,7 +1402,7 @@ export default function ProductosPage() {
                                       size="sm"
                                       variant="ghost"
                                       className="h-7 text-[11px]"
-                                      onClick={()=>setLotesModalProducto(p)}
+                                      onClick={() => setLotesModalProducto(p)}
                                     >
                                       Ver en modal
                                     </Button>
@@ -892,10 +1416,23 @@ export default function ProductosPage() {
                     </React.Fragment>
                   )
                 })}
-                {pageItems.length === 0 && (
+                {pageItems.length === 0 && !loading && (
                   <TableRow>
-                    <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
+                    <TableCell
+                      colSpan={10}
+                      className="py-10 text-center text-muted-foreground"
+                    >
                       No se encontraron productos
+                    </TableCell>
+                  </TableRow>
+                )}
+                {loading && (
+                  <TableRow>
+                    <TableCell colSpan={10} className="py-10">
+                      <div className="flex flex-col items-center gap-3 text-xs text-muted-foreground">
+                        <div className="h-8 w-8 rounded-full border-2 border-cyan-500/30 border-t-cyan-400 animate-spin" />
+                        Cargando...
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}
@@ -905,15 +1442,21 @@ export default function ProductosPage() {
 
           {/* Paginación */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
-            <div className="text-xs text-muted-foreground">
-              Página {page} de {totalPages}
+            <div className="text-xs text-muted-foreground space-x-3">
+              <span>
+                Página {page} de {totalPages}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-cyan-400/70" />
+                Sync {refreshTick}
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 disabled={page === 1}
-                onClick={()=> setPage(p => Math.max(1, p-1))}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
               >
                 Anterior
               </Button>
@@ -924,19 +1467,21 @@ export default function ProductosPage() {
                   min={1}
                   max={totalPages}
                   value={page}
-                  placeholder="Página"
-                  onChange={e=>{
+                  onChange={e => {
                     const val = Number(e.target.value)
-                    if (!Number.isNaN(val)) setPage(Math.min(Math.max(1,val), totalPages))
+                    if (!Number.isNaN(val))
+                      setPage(Math.min(Math.max(1, val), totalPages))
                   }}
                 />
-                <span className="text-xs text-muted-foreground">/ {totalPages}</span>
+                <span className="text-xs text-muted-foreground">
+                  / {totalPages}
+                </span>
               </div>
               <Button
                 variant="outline"
                 size="sm"
                 disabled={page === totalPages}
-                onClick={()=> setPage(p=> Math.min(totalPages, p+1))}
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               >
                 Siguiente
               </Button>
@@ -946,14 +1491,19 @@ export default function ProductosPage() {
       </Card>
 
       {/* MODAL LOTES */}
-      <Dialog open={!!lotesModalProducto} onOpenChange={()=> setLotesModalProducto(null)}>
+      <Dialog
+        open={!!lotesModalProducto}
+        onOpenChange={() => setLotesModalProducto(null)}
+      >
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Package className="h-5 w-5" /> Lotes de {lotesModalProducto?.nombre}
+              <Package className="h-5 w-5 text-cyan-400" /> Lotes de{" "}
+              {lotesModalProducto?.nombre}
             </DialogTitle>
             <DialogDescription>
-              Código: {lotesModalProducto?.codigoBarras} • {lotesModalProducto?.stocks?.length || 0} lotes
+              Código: {lotesModalProducto?.codigoBarras} •{" "}
+              {lotesModalProducto?.stocks?.length || 0} lotes
             </DialogDescription>
           </DialogHeader>
           {lotesModalProducto && (
@@ -975,24 +1525,44 @@ export default function ProductosPage() {
                       const dias = calcularDiasParaVencer(l.fechaVencimiento)
                       const est = obtenerEstadoLote(l.fechaVencimiento)
                       return (
-                        <TableRow key={l.codigoStock || `${l.fechaVencimiento}-${l.cantidadUnidades}`}>
+                        <TableRow
+                          key={
+                            l.codigoStock ||
+                            `${l.fechaVencimiento}-${l.cantidadUnidades}`
+                          }
+                        >
                           <TableCell>
-                            <Badge variant="outline" className="rounded-full">{l.codigoStock || "—"}</Badge>
+                            <Badge variant="outline" className="rounded-full">
+                              {l.codigoStock || "—"}
+                            </Badge>
                           </TableCell>
-                          <TableCell className="tabular-nums">{l.cantidadUnidades}</TableCell>
-                          <TableCell>{new Date(l.fechaVencimiento).toLocaleDateString("es-PE")}</TableCell>
-                          <TableCell className="tabular-nums">S/ {l.precioCompra.toFixed(2)}</TableCell>
+                          <TableCell className="tabular-nums">
+                            {l.cantidadUnidades}
+                          </TableCell>
+                          <TableCell>
+                            {new Date(
+                              l.fechaVencimiento
+                            ).toLocaleDateString("es-PE")}
+                          </TableCell>
+                          <TableCell className="tabular-nums">
+                            S/ {l.precioCompra.toFixed(2)}
+                          </TableCell>
                           <TableCell>
                             <Badge variant={est.color as any} className="rounded-full">
                               {est.texto}
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <span className={clsx(
-                              dias < 0 ? "text-red-600" :
-                              dias <= 30 ? "text-amber-500" : "text-emerald-600",
-                              "tabular-nums text-xs font-medium"
-                            )}>
+                            <span
+                              className={clsx(
+                                dias < 0
+                                  ? "text-red-600"
+                                  : dias <= 30
+                                  ? "text-amber-500"
+                                  : "text-emerald-600",
+                                "tabular-nums text-xs font-medium"
+                              )}
+                            >
                               {dias < 0 ? `-${Math.abs(dias)} d` : `${dias} d`}
                             </span>
                           </TableCell>
@@ -1002,25 +1572,6 @@ export default function ProductosPage() {
                   </TableBody>
                 </Table>
               </div>
-
-              <div className="grid sm:grid-cols-4 gap-4">
-                <StatTile label="Total unidades" value={lotesModalProducto.stocks?.reduce((s,l)=>s+l.cantidadUnidades,0) ?? 0} accent="text-blue-600" />
-                <StatTile label="Total lotes" value={lotesModalProducto.stocks?.length ?? 0} accent="text-green-600" />
-                <StatTile
-                  label="Valor inventario"
-                  value={`S/ ${(lotesModalProducto.stocks?.reduce((s,l)=>s + l.cantidadUnidades*l.precioCompra,0) || 0).toFixed(2)}`}
-                  accent="text-purple-600"
-                />
-                <StatTile
-                  label="Próx. vencimiento"
-                  value={
-                    (lotesModalProducto.stocks?.length ?? 0) > 0
-                      ? Math.min(...(lotesModalProducto.stocks || []).map(l=>calcularDiasParaVencer(l.fechaVencimiento))) + " d"
-                      : "—"
-                  }
-                  accent="text-orange-600"
-                />
-              </div>
             </div>
           )}
         </DialogContent>
@@ -1028,44 +1579,119 @@ export default function ProductosPage() {
 
       {/* DIALOG EDITAR */}
       <Dialog open={!!editandoProducto} onOpenChange={cerrarEdicion}>
-        <DialogContent className="max-w-6xl w-full">
+        <DialogContent className="max-w-5xl w-full">
           <DialogHeader>
             <DialogTitle>Editar Producto</DialogTitle>
-            <DialogDescription>Actualiza datos del producto y sus lotes</DialogDescription>
+            <DialogDescription>
+              Actualiza datos del producto y sus lotes
+            </DialogDescription>
           </DialogHeader>
 
-          <div className="grid md:grid-cols-2 gap-10 max-h-[70vh] overflow-y-auto pr-2">
+          <div className="grid md:grid-cols-2 gap-10 max-h-[65vh] overflow-y-auto pr-2">
             <section className="space-y-6">
               <SectionTitle title="Datos Generales" />
               {editandoProducto && (
                 <>
-                  <Field label="Código de barras *" placeholder="Ej: 7750112345678" value={editandoProducto.codigo_barras} onChange={v=>setEditandoProducto((p:any)=>({...p, codigo_barras:v}))} />
-                  <Field label="Nombre *" placeholder="Nombre comercial" value={editandoProducto.nombre} onChange={v=>setEditandoProducto((p:any)=>({...p, nombre:v}))} />
-                  <Field label="Concentración" placeholder="Ej: 500mg" value={editandoProducto.concentracion} onChange={v=>setEditandoProducto((p:any)=>({...p, concentracion:v}))} />
+                  <Field
+                    label="Código de barras *"
+                    value={editandoProducto.codigo_barras}
+                    onChange={v =>
+                      setEditandoProducto((p: any) => ({
+                        ...p,
+                        codigo_barras: v
+                      }))
+                    }
+                  />
+                  <Field
+                    label="Nombre *"
+                    value={editandoProducto.nombre}
+                    onChange={v =>
+                      setEditandoProducto((p: any) => ({ ...p, nombre: v }))
+                    }
+                  />
+                  <Field
+                    label="Concentración"
+                    value={editandoProducto.concentracion}
+                    onChange={v =>
+                      setEditandoProducto((p: any) => ({
+                        ...p,
+                        concentracion: v
+                      }))
+                    }
+                  />
                   <div className="space-y-2">
                     <Label className="text-xs font-medium">Categoría</Label>
                     <ComboBoxCategoria
                       value={editandoProducto.categoria}
-                      onChange={categoria => setEditandoProducto((p:any)=>({...p, categoria}))}
+                      onChange={categoria =>
+                        setEditandoProducto((p: any) => ({
+                          ...p,
+                          categoria
+                        }))
+                      }
                     />
                   </div>
-                  <Field label="Principio activo" placeholder="Sustancia activa" value={editandoProducto.principioActivo} onChange={v=>setEditandoProducto((p:any)=>({...p, principioActivo:v}))} />
+                  <Field
+                    label="Principio activo"
+                    value={editandoProducto.principioActivo}
+                    onChange={v =>
+                      setEditandoProducto((p: any) => ({
+                        ...p,
+                        principioActivo: v
+                      }))
+                    }
+                  />
                   <div className="space-y-2">
                     <Label className="text-xs font-medium">Tipo</Label>
                     <Select
                       value={editandoProducto.tipoMedicamento}
-                      onValueChange={value=>setEditandoProducto((p:any)=>({...p, tipoMedicamento:value}))}
+                      onValueChange={value =>
+                        setEditandoProducto((p: any) => ({
+                          ...p,
+                          tipoMedicamento: value
+                        }))
+                      }
                     >
-                      <SelectTrigger><SelectValue placeholder="Elige tipo" /></SelectTrigger>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Tipo" />
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="GENÉRICO">Genérico</SelectItem>
                         <SelectItem value="MARCA">Marca</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <Field label="Presentación" placeholder="Forma farmacéutica" value={editandoProducto.presentacion} onChange={v=>setEditandoProducto((p:any)=>({...p, presentacion:v}))} />
-                  <Field label="Laboratorio" placeholder="Fabricante" value={editandoProducto.laboratorio} onChange={v=>setEditandoProducto((p:any)=>({...p, laboratorio:v}))} />
-                  <Field label="Stock mínimo" placeholder="Ej: 15" type="number" value={editandoProducto.cantidad_minima} onChange={v=>setEditandoProducto((p:any)=>({...p, cantidad_minima:v}))} />
+                  <Field
+                    label="Presentación"
+                    value={editandoProducto.presentacion}
+                    onChange={v =>
+                      setEditandoProducto((p: any) => ({
+                        ...p,
+                        presentacion: v
+                      }))
+                    }
+                  />
+                  <Field
+                    label="Laboratorio"
+                    value={editandoProducto.laboratorio}
+                    onChange={v =>
+                      setEditandoProducto((p: any) => ({
+                        ...p,
+                        laboratorio: v
+                      }))
+                    }
+                  />
+                  <Field
+                    label="Stock mínimo"
+                    type="number"
+                    value={editandoProducto.cantidad_minima}
+                    onChange={v =>
+                      setEditandoProducto((p: any) => ({
+                        ...p,
+                        cantidad_minima: v
+                      }))
+                    }
+                  />
                 </>
               )}
             </section>
@@ -1075,75 +1701,238 @@ export default function ProductosPage() {
               {editandoProducto && (
                 <>
                   <div className="grid grid-cols-2 gap-4">
-                    <Field label="Unidades/blister" placeholder="Ej: 10" type="number" value={editandoProducto.cantidad_unidades_blister} onChange={v=>setEditandoProducto((p:any)=>({...p, cantidad_unidades_blister:v}))} />
-                    <Field label="Precio blister" placeholder="Ej: 12.50" type="number" step="0.01" value={editandoProducto.precio_venta_blister} onChange={v=>setEditandoProducto((p:any)=>({...p, precio_venta_blister:v}))} />
+                    <Field
+                      label="Unid/blister"
+                      type="number"
+                      value={editandoProducto.cantidad_unidades_blister}
+                      onChange={v =>
+                        setEditandoProducto((p: any) => ({
+                          ...p,
+                          cantidad_unidades_blister: v
+                        }))
+                      }
+                    />
+                    <Field
+                      label="Precio blister"
+                      type="number"
+                      step="0.01"
+                      value={editandoProducto.precio_venta_blister}
+                      onChange={v =>
+                        setEditandoProducto((p: any) => ({
+                          ...p,
+                          precio_venta_blister: v
+                        }))
+                      }
+                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <Field label="Precio venta *" placeholder="Unitario S/" type="number" step="0.01" value={editandoProducto.precio_venta_und} onChange={v=>setEditandoProducto((p:any)=>({...p, precio_venta_und:v}))} />
-                    <Field label="Precio descuento" placeholder="Descuento S/" type="number" step="0.01" value={editandoProducto.descuento} onChange={v=>setEditandoProducto((p:any)=>({...p, descuento:v}))} />
+                    <Field
+                      label="Precio venta *"
+                      type="number"
+                      step="0.01"
+                      value={editandoProducto.precio_venta_und}
+                      onChange={v =>
+                        setEditandoProducto((p: any) => ({
+                          ...p,
+                          precio_venta_und: v
+                        }))
+                      }
+                    />
+                    <Field
+                      label="Descuento"
+                      type="number"
+                      step="0.01"
+                      value={editandoProducto.descuento}
+                      onChange={v =>
+                        setEditandoProducto((p: any) => ({
+                          ...p,
+                          descuento: v
+                        }))
+                      }
+                    />
                   </div>
 
                   <div className="space-y-2 pt-2">
                     <SectionTitle title="Lotes" small />
                     <div className="grid grid-cols-4 gap-3">
-                      <Input placeholder="Código lote (opcional)" className="col-span-2" value={loteEnEdicion?.codigoStock || ""} onChange={e=>setLoteEnEdicion(o=>({...o, codigoStock:e.target.value} as StockLote))} />
-                      <Input placeholder="Unidades" type="number" min={1} className="col-span-2" value={loteEnEdicion?.cantidadUnidades || ""} onChange={e=>setLoteEnEdicion(o=>({...o, cantidadUnidades:Number(e.target.value)} as StockLote))} />
-                      <Input type="date" className="col-span-2" value={loteEnEdicion?.fechaVencimiento || ""} onChange={e=>setLoteEnEdicion(o=>({...o, fechaVencimiento:e.target.value} as StockLote))} />
-                      <Input placeholder="Precio compra (S/)" type="number" step="0.01" className="col-span-2" value={loteEnEdicion?.precioCompra ?? ""} onChange={e=>setLoteEnEdicion(o=>({...o, precioCompra:Number(e.target.value)} as StockLote))} />
+                      <Input
+                        placeholder="Código (opt)"
+                        className="col-span-2"
+                        value={loteEnEdicion?.codigoStock || ""}
+                        onChange={e =>
+                          setLoteEnEdicion(o => ({
+                            codigoStock: e.target.value,
+                            cantidadUnidades: o?.cantidadUnidades ?? 0,
+                            fechaVencimiento: o?.fechaVencimiento ?? "",
+                            precioCompra: o?.precioCompra ?? 0
+                          }))
+                        }
+                      />
+                      <Input
+                        placeholder="Unid"
+                        type="number"
+                        min={1}
+                        className="col-span-2"
+                        value={loteEnEdicion?.cantidadUnidades || ""}
+                        onChange={e =>
+                          setLoteEnEdicion(o => ({
+                            codigoStock: o?.codigoStock ?? "",
+                            cantidadUnidades: Number(e.target.value),
+                            fechaVencimiento: o?.fechaVencimiento ?? "",
+                            precioCompra: o?.precioCompra ?? 0
+                          }))
+                        }
+                      />
+                      <Input
+                        type="date"
+                        className="col-span-2"
+                        value={loteEnEdicion?.fechaVencimiento || ""}
+                        onChange={e =>
+                          setLoteEnEdicion(o => ({
+                                                      codigoStock: o?.codigoStock ?? "",
+                                                      cantidadUnidades: o?.cantidadUnidades ?? 0,
+                                                      fechaVencimiento: e.target.value,
+                                                      precioCompra: o?.precioCompra ?? 0
+                                                    }))
+                        }
+                      />
+                      <Input
+                        placeholder="Compra S/"
+                        type="number"
+                        step="0.01"
+                        className="col-span-2"
+                        value={loteEnEdicion?.precioCompra ?? ""}
+                        onChange={e =>
+                          setLoteEnEdicion(o =>
+                            o
+                              ? {
+                                  codigoStock: o.codigoStock ?? "",
+                                  cantidadUnidades: o.cantidadUnidades ?? 0,
+                                  fechaVencimiento: o.fechaVencimiento ?? "",
+                                  precioCompra: Number(e.target.value)
+                                }
+                              : {
+                                  codigoStock: "",
+                                  cantidadUnidades: 0,
+                                  fechaVencimiento: "",
+                                  precioCompra: Number(e.target.value)
+                                }
+                          )
+                        }
+                      />
                     </div>
                     <div className="flex gap-2">
                       {editLoteIndex === null ? (
-                        <Button size="sm" variant="secondary" onClick={agregarLoteAEdicion}>Agregar lote</Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={agregarLoteAEdicion}
+                        >
+                          Agregar lote
+                        </Button>
                       ) : (
-                        <Button size="sm" variant="secondary" onClick={guardarLoteEditado}>Guardar edición</Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={guardarLoteEditado}
+                        >
+                          Guardar lote
+                        </Button>
                       )}
                       {editLoteIndex !== null && (
-                        <Button size="sm" variant="ghost" onClick={()=>{ setEditLoteIndex(null); setLoteEnEdicion(null) }}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setEditLoteIndex(null)
+                            setLoteEnEdicion(null)
+                          }}
+                        >
                           Cancelar
                         </Button>
                       )}
                       <span className="text-xs text-muted-foreground ml-auto">
-                        Stock total: {editandoProducto.stocks.reduce((s:number,l:StockLote)=>s+l.cantidadUnidades,0)} u
+                        Stock:{" "}
+                        {editandoProducto.stocks.reduce(
+                          (s: number, l: StockLote) => s + l.cantidadUnidades,
+                          0
+                        )}{" "}
+                        u
                       </span>
                     </div>
-                    <div className="rounded-lg border bg-background/50 backdrop-blur-sm max-h-48 overflow-auto">
-                      {(!editandoProducto.stocks || editandoProducto.stocks.length === 0) && (
-                        <div className="text-xs p-4 text-muted-foreground">Sin lotes</div>
+                    <div className="rounded-lg border bg-background/50 backdrop-blur-sm max-h-44 overflow-auto">
+                      {(!editandoProducto.stocks ||
+                        editandoProducto.stocks.length === 0) && (
+                        <div className="text-xs p-4 text-muted-foreground">
+                          Sin lotes
+                        </div>
                       )}
-                      {editandoProducto.stocks && editandoProducto.stocks.length > 0 && (
-                        <Table className="text-[11px]">
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="py-1">Lote</TableHead>
-                              <TableHead className="py-1">Unid</TableHead>
-                              <TableHead className="py-1">Venc</TableHead>
-                              <TableHead className="py-1">Compra</TableHead>
-                              <TableHead className="py-1 text-right">Acciones</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {editandoProducto.stocks.map((l:StockLote, idx:number)=>(
-                              <TableRow key={l.codigoStock || `${l.fechaVencimiento}-${idx}`}>
-                                <TableCell className="py-1">{l.codigoStock}</TableCell>
-                                <TableCell className="py-1 tabular-nums">{l.cantidadUnidades}</TableCell>
-                                <TableCell className="py-1">{l.fechaVencimiento}</TableCell>
-                                <TableCell className="py-1 tabular-nums">S/ {Number(l.precioCompra).toFixed(2)}</TableCell>
-                                <TableCell className="py-1 text-right">
-                                  <div className="flex justify-end gap-1">
-                                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={()=>editarLoteDeEdicion(idx)}>
-                                      <Edit className="h-4 w-4" />
-                                    </Button>
-                                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={()=>eliminarLoteDeEdicion(idx)}>
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                </TableCell>
+                      {editandoProducto.stocks &&
+                        editandoProducto.stocks.length > 0 && (
+                          <Table className="text-[11px]">
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="py-1">Lote</TableHead>
+                                <TableHead className="py-1">Unid</TableHead>
+                                <TableHead className="py-1">Venc</TableHead>
+                                <TableHead className="py-1">Compra</TableHead>
+                                <TableHead className="py-1 text-right">
+                                  Acciones
+                                </TableHead>
                               </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      )}
+                            </TableHeader>
+                            <TableBody>
+                              {editandoProducto.stocks.map(
+                                (l: StockLote, idx: number) => (
+                                  <TableRow
+                                    key={
+                                      l.codigoStock ||
+                                      `${l.fechaVencimiento}-${idx}`
+                                    }
+                                  >
+                                    <TableCell className="py-1">
+                                      {l.codigoStock}
+                                    </TableCell>
+                                    <TableCell className="py-1 tabular-nums">
+                                      {l.cantidadUnidades}
+                                    </TableCell>
+                                    <TableCell className="py-1">
+                                      {l.fechaVencimiento}
+                                    </TableCell>
+                                    <TableCell className="py-1 tabular-nums">
+                                      S/ {Number(l.precioCompra).toFixed(2)}
+                                    </TableCell>
+                                    <TableCell className="py-1 text-right">
+                                      <div className="flex justify-end gap-1">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6"
+                                          onClick={() =>
+                                            editarLoteDeEdicion(idx)
+                                          }
+                                        >
+                                          <Edit className="h-4 w-4" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6"
+                                          onClick={() =>
+                                            eliminarLoteDeEdicion(idx)
+                                          }
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                )
+                              )}
+                            </TableBody>
+                          </Table>
+                        )}
                     </div>
                   </div>
                 </>
@@ -1151,9 +1940,11 @@ export default function ProductosPage() {
             </section>
           </div>
 
-          <DialogFooter className="pt-4">
-            <Button variant="outline" onClick={cerrarEdicion}>Cancelar</Button>
-            <Button onClick={guardarEdicion}>Guardar Cambios</Button>
+          <DialogFooter className="pt-2">
+            <Button variant="outline" onClick={cerrarEdicion}>
+              Cancelar
+            </Button>
+            <Button onClick={guardarEdicion}>Guardar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1161,16 +1952,23 @@ export default function ProductosPage() {
   )
 }
 
-/* -------------------- SUBCOMPONENTES -------------------- */
-
-function DensityToggle({ compact, onChange }: { compact: boolean; onChange: ()=>void }) {
+/* =========================================================
+   SUBCOMPONENTES
+========================================================= */
+function DensityToggle({
+  compact,
+  onChange
+}: {
+  compact: boolean
+  onChange: () => void
+}) {
   return (
-    <div className="flex items-center rounded-full border bg-background/70 backdrop-blur px-1">
+    <div className="flex items-center rounded-full border bg-background/60 backdrop-blur px-1">
       <Button
         size="icon"
         variant={!compact ? "secondary" : "ghost"}
         className="h-8 w-8 rounded-full"
-        onClick={()=> compact && onChange()}
+        onClick={() => compact && onChange()}
         aria-label="Vista normal"
       >
         <Maximize2 className="h-4 w-4" />
@@ -1179,7 +1977,7 @@ function DensityToggle({ compact, onChange }: { compact: boolean; onChange: ()=>
         size="icon"
         variant={compact ? "secondary" : "ghost"}
         className="h-8 w-8 rounded-full"
-        onClick={()=> !compact && onChange()}
+        onClick={() => !compact && onChange()}
         aria-label="Vista compacta"
       >
         <Minimize2 className="h-4 w-4" />
@@ -1188,12 +1986,14 @@ function DensityToggle({ compact, onChange }: { compact: boolean; onChange: ()=>
   )
 }
 
-function SectionTitle({ title, small=false }: { title: string; small?: boolean }) {
+function SectionTitle({ title, small = false }: { title: string; small?: boolean }) {
   return (
     <h3
       className={clsx(
         "font-semibold tracking-tight flex items-center gap-2",
-        small ? "text-xs uppercase text-muted-foreground" : "text-sm"
+        small
+          ? "text-xs uppercase text-muted-foreground"
+          : "text-sm text-slate-100"
       )}
     >
       {title}
@@ -1216,7 +2016,8 @@ function Field({
   step?: string
   placeholder?: string
 }) {
-  const auto = placeholder || `Ingresa ${label.replace("*","").toLowerCase()}`.trim()
+  const auto =
+    placeholder || `Ingresa ${label.replace("*", "").toLowerCase()}`.trim()
   return (
     <div className="space-y-2">
       <Label className="text-xs font-medium">{label}</Label>
@@ -1226,20 +2027,8 @@ function Field({
         step={step}
         placeholder={auto}
         onChange={e => onChange(e.target.value)}
-        className="focus-visible:ring-1"
+        className="focus-visible:ring-1 focus-visible:ring-cyan-400/50"
       />
-    </div>
-  )
-}
-
-function InfoBox({ label, value, wide, accent }: { label: string; value: any; wide?: boolean; accent?: string }) {
-  return (
-    <div className={clsx(
-      "p-2 rounded-lg border bg-background/50 backdrop-blur-sm flex flex-col gap-0.5 hover:shadow-sm transition-shadow",
-      wide && "col-span-2"
-    )}>
-      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
-      <span className={clsx("text-xs font-semibold tabular-nums", accent)}>{value}</span>
     </div>
   )
 }
@@ -1253,11 +2042,90 @@ function Detail({ label, value }: { label: string; value: any }) {
   )
 }
 
-function StatTile({ label, value, accent }: { label: string; value: any; accent?: string }) {
+function InfoBox({
+  label,
+  value,
+  wide,
+  accent
+}: {
+  label: string
+  value: any
+  wide?: boolean
+  accent?: string
+}) {
   return (
-    <div className="rounded-lg border bg-background/60 backdrop-blur-sm p-4 text-center">
-      <span className="block text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
-      <span className={clsx("mt-1 block font-bold text-lg tabular-nums", accent)}>{value}</span>
+    <div
+      className={clsx(
+        "p-2 rounded-lg border bg-background/50 backdrop-blur-sm flex flex-col gap-0.5",
+        wide && "col-span-2"
+      )}
+    >
+      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span className={clsx("text-xs font-semibold tabular-nums", accent)}>
+        {value}
+      </span>
+    </div>
+  )
+}
+
+/* Métrica card simplificada */
+function MetricCard({
+  icon: Icon,
+  label,
+  value,
+  accent,
+  warn,
+  danger
+}: {
+  icon: React.ComponentType<any>
+  label: string
+  value: number | string
+  accent: string
+  warn?: boolean
+  danger?: boolean
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[linear-gradient(135deg,rgba(17,25,38,0.85)_0%,rgba(14,20,30,0.75)_60%,rgba(10,15,24,0.85)_100%)] backdrop-blur-md p-4 flex flex-col gap-3">
+      <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity bg-[radial-gradient(circle_at_35%_20%,rgba(56,189,248,0.18),transparent_60%)]" />
+      <div
+        className={clsx(
+          "absolute inset-0 pointer-events-none",
+          "bg-gradient-to-br",
+          accent,
+          "opacity-30"
+        )}
+      />
+      <div className="relative flex items-center justify-between">
+        <span className="text-[11px] font-medium tracking-wide text-muted-foreground">
+          {label}
+        </span>
+        <div className="h-9 w-9 rounded-lg flex items-center justify-center bg-slate-900/50 ring-1 ring-white/10">
+          <Icon
+            className={clsx(
+              "h-5 w-5",
+              danger
+                ? "text-red-400"
+                : warn
+                ? "text-amber-400"
+                : "text-cyan-300"
+            )}
+          />
+        </div>
+      </div>
+      <div
+        className={clsx(
+          "relative text-2xl font-semibold tabular-nums tracking-tight",
+          danger
+            ? "text-red-300"
+            : warn
+            ? "text-amber-300"
+            : "text-slate-100"
+        )}
+      >
+        {value}
+      </div>
     </div>
   )
 }

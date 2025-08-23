@@ -1,10 +1,3 @@
-// Cambios aplicados:
-// - En acciones se mantiene SOLO el botón de expandir (el botón de descargar PDF individual ya estaba quitado)
-// - Se eliminó también el botón PDF dentro del panel expandido (para que no haya descarga por venta).
-// - Se sigue permitiendo exportar CSV/PDF global desde la barra de acciones superior.
-// - DateRangePicker ahora es la versión sin calendario (solo presets) ya actualizada.
-// - Eliminado import y función exportarBoletaDetallePDF porque ya no se usa.
-
 "use client"
 
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react"

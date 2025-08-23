@@ -45,7 +45,7 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/lib/use-toast"
 import { apiUrl } from "@/components/config"
 import { buildTicketHTML, VentaPreview } from "@/lib/print-utils"
 import { cn } from "@/lib/utils"
@@ -76,6 +76,7 @@ interface ProductoCarrito {
   cantidadBlister: number
   cantidadUnidad: number
   subtotal: number
+  stockDisponible: number // MOD: almacenamos el stock al momento de agregar
 }
 interface UsuarioSesion {
   dni: string
@@ -207,9 +208,6 @@ function buildVentaPreviewFromState(params: {
 
 /* -------------------------------------------------- */
 /*             COMPONENTE PRINCIPAL (UI)              */
-/*     Diseño futurista: reorganización solicitada    */
-/*  - Columna izquierda: Buscar Productos + Carrito   */
-/*  - Columna derecha: Cliente + Método + Resumen     */
 /* -------------------------------------------------- */
 export default function NuevaVentaPage() {
   const router = useRouter()
@@ -308,7 +306,7 @@ export default function NuevaVentaPage() {
         const resp = await fetchWithAuth(url)
         if (!resp) {
           setCajaAbierta(false)
-          if (showMessage) {
+            if (showMessage) {
             toast({
               title: "No hay caja abierta",
               description: "Debes abrir una caja antes de realizar la venta.",
@@ -500,6 +498,7 @@ export default function NuevaVentaPage() {
     }
   }
 
+  // MOD: agregarAlCarrito guarda stockDisponible y ya no dependemos luego de productos para aumentar/disminuir.
   const agregarAlCarrito = (producto: Producto) => {
     const sel = blisterUnidadSeleccion[producto.codigoBarras] || { blisters: 0, unidades: 0 }
     const unidadesPorBlister = producto.cantidadUnidadesBlister || 0
@@ -526,10 +525,10 @@ export default function NuevaVentaPage() {
         const newB = existing.cantidadBlister + sel.blisters
         const newU = existing.cantidadUnidad + sel.unidades
         const nuevoTotalUnidades = unidadesPorBlister * newB + newU
-        if (nuevoTotalUnidades > producto.cantidadGeneral) {
+        if (nuevoTotalUnidades > existing.stockDisponible) {
           toast({
             title: "Stock insuficiente",
-            description: `Máximo ${producto.cantidadGeneral} unidades`,
+            description: `Máximo ${existing.stockDisponible} unidades`,
             variant: "destructive"
           })
           return prev
@@ -557,30 +556,38 @@ export default function NuevaVentaPage() {
           descuento: producto.descuento,
           cantidadBlister: sel.blisters,
           cantidadUnidad: sel.unidades,
-          subtotal: precioBlister * sel.blisters + precioUnidadFinal * sel.unidades
+          subtotal: precioBlister * sel.blisters + precioUnidadFinal * sel.unidades,
+          stockDisponible: producto.cantidadGeneral
         }
       ]
     })
   }
 
+  // MOD: cambiarCantidadCarrito ya no busca el producto en 'productos'; usa el stockDisponible.
   const cambiarCantidadCarrito = (codigoBarras: string, tipo: "blister" | "unidad", delta: number) => {
     setCarrito(prev =>
       prev
         .map(item => {
-          if (item.codigoBarras !== codigoBarras) return item
-            const producto = productos.find(p => p.codigoBarras === codigoBarras)
-          if (!producto) return item
+          if (item.codigoBarras !== codigoBarras) {
+            return item
+          }
+
+          const stockMax = item.stockDisponible
           let nb = item.cantidadBlister
           let nu = item.cantidadUnidad
-          if (tipo === "blister") nb = Math.max(0, nb + delta)
-          else nu = Math.max(0, nu + delta)
+
+          if (tipo === "blister") {
+            nb = Math.max(0, nb + delta)
+          } else {
+            nu = Math.max(0, nu + delta)
+          }
 
           const unidadesPorBlister = item.cantidadUnidadesBlister || 0
           const totalTemp = unidadesPorBlister * nb + nu
-          if (totalTemp > producto.cantidadGeneral) {
+          if (totalTemp > stockMax) {
             toast({
               title: "Stock insuficiente",
-              description: `Máximo ${producto.cantidadGeneral} unidades`,
+              description: `Máximo ${stockMax} unidades`,
               variant: "destructive"
             })
             return item
@@ -807,352 +814,352 @@ export default function NuevaVentaPage() {
         {/* IZQUIERDA (2/3) - Buscar + Carrito */}
         <div className="space-y-8 xl:col-span-2">
           {/* Buscar Productos */}
-            <GlassPanel>
-              <CardHeader className="pb-4">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  <div>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <ScanSearch className="h-5 w-5 text-primary" />
-                      Buscar Productos
-                    </CardTitle>
-                    <CardDescription>
-                      Nombre, código, laboratorio, concentración o tipo
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        type="search"
-                        placeholder="Buscar..."
-                        className="pl-8 w-60"
-                        value={busqueda}
-                        onChange={e => {
-                          setBusqueda(e.target.value)
-                          if (e.target.value.trim() === "") setMostrarResultados(false)
-                          else setMostrarResultados(true)
-                        }}
-                        onKeyDown={e => {
-                          if (e.key === "Escape") {
-                            setBusqueda("")
-                            setMostrarResultados(false)
-                          }
-                        }}
-                      />
-                      {busqueda && (
-                        <button
-                          onClick={() => {
-                            setBusqueda("")
-                            setMostrarResultados(false)
-                          }}
-                          className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                    <Button
-                      variant={mostrarResultados ? "secondary" : "default"}
-                      onClick={() => {
-                        if (busqueda.trim() === "") {
-                          toast({ title: "Ingresa un término", variant: "destructive" })
-                          return
-                        }
-                        setMostrarResultados(true)
-                      }}
-                    >
-                      {mostrarResultados ? "Refrescar" : "Buscar"}
-                    </Button>
-                  </div>
+          <GlassPanel>
+            <CardHeader className="pb-4">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <ScanSearch className="h-5 w-5 text-primary" />
+                    Buscar Productos
+                  </CardTitle>
+                  <CardDescription>
+                    Nombre, código, laboratorio, concentración o tipo
+                  </CardDescription>
                 </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                {!mostrarResultados && (
-                  <div className="text-xs text-muted-foreground flex items-center gap-2 py-6">
-                    <Bot className="h-4 w-4" />
-                    Introduce un término de búsqueda para mostrar resultados.
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="search"
+                      placeholder="Buscar..."
+                      className="pl-8 w-60"
+                      value={busqueda}
+                      onChange={e => {
+                        setBusqueda(e.target.value)
+                        if (e.target.value.trim() === "") setMostrarResultados(false)
+                        else setMostrarResultados(true)
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === "Escape") {
+                          setBusqueda("")
+                          setMostrarResultados(false)
+                        }
+                      }}
+                    />
+                    {busqueda && (
+                      <button
+                        onClick={() => {
+                          setBusqueda("")
+                          setMostrarResultados(false)
+                        }}
+                        className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
-                )}
-                {mostrarResultados && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-medium text-sm">
-                        Resultados <span className="text-muted-foreground">({resultados.length})</span>
-                      </h3>
-                      <div className="flex items-center gap-3">
-                        <div className="hidden xl:flex items-center gap-3 pr-3 border-r">
-                          <SortButton field="nombre">Nombre</SortButton>
-                          <SortButton field="precio">Precio</SortButton>
-                          <SortButton field="stock">Stock</SortButton>
-                          <SortButton field="laboratorio">Lab</SortButton>
-                          <SortButton field="tipo">Tipo</SortButton>
-                          <SortButton field="concentracion">Concent.</SortButton>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setMostrarResultados(false)
-                            setBusqueda("")
-                          }}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
+                  <Button
+                    variant={mostrarResultados ? "secondary" : "default"}
+                    onClick={() => {
+                      if (busqueda.trim() === "") {
+                        toast({ title: "Ingresa un término", variant: "destructive" })
+                        return
+                      }
+                      setMostrarResultados(true)
+                    }}
+                  >
+                    {mostrarResultados ? "Refrescar" : "Buscar"}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {!mostrarResultados && (
+                <div className="text-xs text-muted-foreground flex items-center gap-2 py-6">
+                  <Bot className="h-4 w-4" />
+                  Introduce un término de búsqueda para mostrar resultados.
+                </div>
+              )}
+              {mostrarResultados && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-medium text-sm">
+                      Resultados <span className="text-muted-foreground">({resultados.length})</span>
+                    </h3>
+                    <div className="flex items-center gap-3">
+                      <div className="hidden xl:flex items-center gap-3 pr-3 border-r">
+                        <SortButton field="nombre">Nombre</SortButton>
+                        <SortButton field="precio">Precio</SortButton>
+                        <SortButton field="stock">Stock</SortButton>
+                        <SortButton field="laboratorio">Lab</SortButton>
+                        <SortButton field="tipo">Tipo</SortButton>
+                        <SortButton field="concentracion">Concent.</SortButton>
                       </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setMostrarResultados(false)
+                          setBusqueda("")
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
                     </div>
-                    <div className="rounded-xl border bg-background/60 backdrop-blur max-h-96 overflow-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="text-[11px]">
-                            <TableHead className="min-w-[120px]">
-                              <SortButton field="nombre">Producto</SortButton>
-                            </TableHead>
-                            <TableHead className="w-[100px]">
-                              <SortButton field="concentracion">Concent.</SortButton>
-                            </TableHead>
-                            <TableHead className="w-[120px]">
-                              <SortButton field="laboratorio">Laboratorio</SortButton>
-                            </TableHead>
-                            <TableHead className="w-[80px]">
-                              <SortButton field="tipo">Tipo</SortButton>
-                            </TableHead>
-                            <TableHead className="w-[110px]">Presentación</TableHead>
-                            <TableHead className="w-[130px]">
-                              <SortButton field="precio">Precio</SortButton>
-                            </TableHead>
-                            <TableHead className="w-[75px]">
-                              <SortButton field="stock">Stock</SortButton>
-                            </TableHead>
-                            <TableHead className="w-[150px] text-center">
-                              Venta
-                            </TableHead>
-                            <TableHead className="text-right w-[100px]">
-                              Agregar
-                            </TableHead>
+                  </div>
+                  <div className="rounded-xl border bg-background/60 backdrop-blur max-h-96 overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="text-[11px]">
+                          <TableHead className="min-w-[120px]">
+                            <SortButton field="nombre">Producto</SortButton>
+                          </TableHead>
+                          <TableHead className="w-[100px]">
+                            <SortButton field="concentracion">Concent.</SortButton>
+                          </TableHead>
+                          <TableHead className="w-[120px]">
+                            <SortButton field="laboratorio">Laboratorio</SortButton>
+                          </TableHead>
+                          <TableHead className="w-[80px]">
+                            <SortButton field="tipo">Tipo</SortButton>
+                          </TableHead>
+                          <TableHead className="w-[110px]">Presentación</TableHead>
+                          <TableHead className="w-[130px]">
+                            <SortButton field="precio">Precio</SortButton>
+                          </TableHead>
+                          <TableHead className="w-[75px]">
+                            <SortButton field="stock">Stock</SortButton>
+                          </TableHead>
+                          <TableHead className="w-[150px] text-center">
+                            Venta
+                          </TableHead>
+                          <TableHead className="text-right w-[100px]">
+                            Agregar
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {resultados.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={9} className="text-center py-6 text-xs text-muted-foreground">
+                              Sin resultados
+                            </TableCell>
                           </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {resultados.length === 0 && (
-                            <TableRow>
-                              <TableCell colSpan={9} className="text-center py-6 text-xs text-muted-foreground">
-                                Sin resultados
+                        )}
+                        {resultados.map(prod => {
+                          const precioUnidadFinal =
+                            prod.precioVentaUnd - (prod.descuento ?? 0)
+                          const descuentoPct =
+                            prod.precioVentaUnd > 0 && prod.descuento > 0
+                              ? (prod.descuento / prod.precioVentaUnd) * 100
+                              : 0
+                          const sel =
+                            blisterUnidadSeleccion[prod.codigoBarras] || {
+                              blisters: 0,
+                              unidades: 0
+                            }
+                          const tipoBadgeVariant =
+                            prod.tipoMedicamento === "MARCA" ? "destructive" : "outline"
+                          return (
+                            <TableRow key={prod.codigoBarras} className="text-[11.5px]">
+                              <TableCell className="align-top">
+                                <div className="font-medium leading-tight">
+                                  {prod.nombre}
+                                </div>
+                                <div className="text-[9px] text-muted-foreground">
+                                  {prod.codigoBarras}
+                                </div>
                               </TableCell>
-                            </TableRow>
-                          )}
-                          {resultados.map(prod => {
-                            const precioUnidadFinal =
-                              prod.precioVentaUnd - (prod.descuento ?? 0)
-                            const descuentoPct =
-                              prod.precioVentaUnd > 0 && prod.descuento > 0
-                                ? (prod.descuento / prod.precioVentaUnd) * 100
-                                : 0
-                            const sel =
-                              blisterUnidadSeleccion[prod.codigoBarras] || {
-                                blisters: 0,
-                                unidades: 0
-                              }
-                            const tipoBadgeVariant =
-                              prod.tipoMedicamento === "MARCA" ? "destructive" : "outline"
-                            return (
-                              <TableRow key={prod.codigoBarras} className="text-[11.5px]">
-                                <TableCell className="align-top">
-                                  <div className="font-medium leading-tight">
-                                    {prod.nombre}
-                                  </div>
-                                  <div className="text-[9px] text-muted-foreground">
-                                    {prod.codigoBarras}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="align-top">
-                                  {prod.concentracion || "—"}
-                                </TableCell>
-                                <TableCell className="align-top">
-                                  {prod.laboratorio || "—"}
-                                </TableCell>
-                                <TableCell className="align-top">
-                                  <Badge
-                                    variant={tipoBadgeVariant}
-                                    className="px-1.5 py-0 text-[9px]"
-                                  >
-                                    {prod.tipoMedicamento || "—"}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="align-top">
-                                  {prod.presentacion ? (
-                                    <span className="line-clamp-2">
-                                      {prod.presentacion}
-                                    </span>
-                                  ) : (
-                                    <span className="text-muted-foreground">—</span>
-                                  )}
-                                </TableCell>
-                                <TableCell className="align-top">
-                                  <div className="flex flex-col gap-0.5">
-                                    {prod.precioVentaBlister &&
-                                    prod.cantidadUnidadesBlister ? (
-                                      <div className="text-xs">
-                                        <span className="font-semibold text-primary">
-                                          S/ {prod.precioVentaBlister.toFixed(2)}
-                                        </span>{" "}
-                                        <span className="text-muted-foreground">
-                                          / blister
-                                        </span>
-                                      </div>
-                                    ) : null}
-                                    <div className="text-xs flex flex-col">
-                                      {descuentoPct > 0 && (
-                                        <span className="line-through text-[10px] text-muted-foreground">
-                                          S/ {prod.precioVentaUnd.toFixed(2)}
-                                        </span>
-                                      )}
-                                      <span
-                                        className={cn(
-                                          "font-semibold",
-                                          descuentoPct > 0 && "text-emerald-600"
-                                        )}
-                                      >
-                                        S/ {precioUnidadFinal.toFixed(2)}
-                                        <span className="text-muted-foreground">
-                                          {" "}
-                                          / und
-                                        </span>
+                              <TableCell className="align-top">
+                                {prod.concentracion || "—"}
+                              </TableCell>
+                              <TableCell className="align-top">
+                                {prod.laboratorio || "—"}
+                              </TableCell>
+                              <TableCell className="align-top">
+                                <Badge
+                                  variant={tipoBadgeVariant}
+                                  className="px-1.5 py-0 text-[9px]"
+                                >
+                                  {prod.tipoMedicamento || "—"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="align-top">
+                                {prod.presentacion ? (
+                                  <span className="line-clamp-2">
+                                    {prod.presentacion}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="align-top">
+                                <div className="flex flex-col gap-0.5">
+                                  {prod.precioVentaBlister &&
+                                  prod.cantidadUnidadesBlister ? (
+                                    <div className="text-xs">
+                                      <span className="font-semibold text-primary">
+                                        S/ {prod.precioVentaBlister.toFixed(2)}
+                                      </span>{" "}
+                                      <span className="text-muted-foreground">
+                                        / blister
                                       </span>
                                     </div>
+                                  ) : null}
+                                  <div className="text-xs flex flex-col">
                                     {descuentoPct > 0 && (
-                                      <Badge
-                                        variant="outline"
-                                        className="bg-yellow-100 text-yellow-800 border-yellow-300 w-fit px-1 py-0 text-[9px]"
-                                      >
-                                        -{descuentoPct.toFixed(1)}%
-                                      </Badge>
+                                      <span className="line-through text-[10px] text-muted-foreground">
+                                        S/ {prod.precioVentaUnd.toFixed(2)}
+                                      </span>
                                     )}
+                                    <span
+                                      className={cn(
+                                        "font-semibold",
+                                        descuentoPct > 0 && "text-emerald-600"
+                                      )}
+                                    >
+                                      S/ {precioUnidadFinal.toFixed(2)}
+                                      <span className="text-muted-foreground">
+                                        {" "}
+                                        / und
+                                      </span>
+                                    </span>
                                   </div>
-                                </TableCell>
-                                <TableCell className="align-top">
-                                  <Badge
-                                    variant={
-                                      prod.cantidadGeneral <= 0
-                                        ? "destructive"
-                                        : prod.cantidadGeneral <= 10
-                                        ? "secondary"
-                                        : "default"
-                                    }
-                                    className="px-1.5 py-0 text-[9px]"
-                                  >
-                                    {prod.cantidadGeneral} u
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="align-top">
-                                  <div className="flex flex-col gap-1">
-                                    {prod.cantidadUnidadesBlister &&
-                                    prod.precioVentaBlister ? (
-                                      <div className="flex flex-col gap-1">
-                                        <div className="flex items-center gap-1">
-                                          <span className="text-[9px]">Blisters</span>
-                                          <Input
-                                            type="number"
-                                            min={0}
-                                            max={Math.floor(
-                                              prod.cantidadGeneral /
-                                                (prod.cantidadUnidadesBlister || 1)
-                                            )}
-                                            className="w-14 h-7 text-[11px]"
-                                            value={sel.blisters || ""}
-                                            onChange={e => {
-                                              const v = Math.max(0, Number(e.target.value))
-                                              setBlisterUnidadSeleccion(prev => ({
-                                                ...prev,
-                                                [prod.codigoBarras]: {
-                                                  blisters: v,
-                                                  unidades:
-                                                    prev[prod.codigoBarras]?.unidades ?? 0
-                                                }
-                                              }))
-                                            }}
-                                          />
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                          <span className="text-[9px]">Unidades</span>
-                                          <Input
-                                            type="number"
-                                            min={0}
-                                            max={
+                                  {descuentoPct > 0 && (
+                                    <Badge
+                                      variant="outline"
+                                      className="bg-yellow-100 text-yellow-800 border-yellow-300 w-fit px-1 py-0 text-[9px]"
+                                    >
+                                      -{descuentoPct.toFixed(1)}%
+                                    </Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="align-top">
+                                <Badge
+                                  variant={
+                                    prod.cantidadGeneral <= 0
+                                      ? "destructive"
+                                      : prod.cantidadGeneral <= 10
+                                      ? "secondary"
+                                      : "default"
+                                  }
+                                  className="px-1.5 py-0 text-[9px]"
+                                >
+                                  {prod.cantidadGeneral} u
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="align-top">
+                                <div className="flex flex-col gap-1">
+                                  {prod.cantidadUnidadesBlister &&
+                                  prod.precioVentaBlister ? (
+                                    <div className="flex flex-col gap-1">
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-[9px]">Blisters</span>
+                                        <Input
+                                          type="number"
+                                          min={0}
+                                          max={Math.floor(
+                                            prod.cantidadGeneral /
+                                              (prod.cantidadUnidadesBlister || 1)
+                                          )}
+                                          className="w-14 h-7 text-[11px]"
+                                          value={sel.blisters || ""}
+                                          onChange={e => {
+                                            const v = Math.max(0, Number(e.target.value))
+                                            setBlisterUnidadSeleccion(prev => ({
+                                              ...prev,
+                                              [prod.codigoBarras]: {
+                                                blisters: v,
+                                                unidades:
+                                                  prev[prod.codigoBarras]?.unidades ?? 0
+                                              }
+                                            }))
+                                          }}
+                                        />
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-[9px]">Unidades</span>
+                                        <Input
+                                          type="number"
+                                          min={0}
+                                          max={
+                                            prod.cantidadUnidadesBlister &&
+                                            prod.cantidadUnidadesBlister > 1
+                                              ? prod.cantidadUnidadesBlister - 1
+                                              : prod.cantidadGeneral -
+                                                sel.blisters *
+                                                  (prod.cantidadUnidadesBlister || 0)
+                                          }
+                                          className="w-14 h-7 text-[11px]"
+                                          value={sel.unidades || ""}
+                                          onChange={e => {
+                                            let v = Math.max(0, Number(e.target.value))
+                                            const maxU =
                                               prod.cantidadUnidadesBlister &&
                                               prod.cantidadUnidadesBlister > 1
                                                 ? prod.cantidadUnidadesBlister - 1
                                                 : prod.cantidadGeneral -
                                                   sel.blisters *
                                                     (prod.cantidadUnidadesBlister || 0)
-                                            }
-                                            className="w-14 h-7 text-[11px]"
-                                            value={sel.unidades || ""}
-                                            onChange={e => {
-                                              let v = Math.max(0, Number(e.target.value))
-                                              const maxU =
-                                                prod.cantidadUnidadesBlister &&
-                                                prod.cantidadUnidadesBlister > 1
-                                                  ? prod.cantidadUnidadesBlister - 1
-                                                  : prod.cantidadGeneral -
-                                                    sel.blisters *
-                                                      (prod.cantidadUnidadesBlister || 0)
-                                              if (v > maxU) v = maxU
-                                              setBlisterUnidadSeleccion(prev => ({
-                                                ...prev,
-                                                [prod.codigoBarras]: {
-                                                  blisters:
-                                                    prev[prod.codigoBarras]?.blisters ?? 0,
-                                                  unidades: v
-                                                }
-                                              }))
-                                            }}
-                                          />
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-[9px]">Unidades</span>
-                                        <Input
-                                          type="number"
-                                          min={0}
-                                          max={prod.cantidadGeneral}
-                                          className="w-16 h-7 text-[11px]"
-                                          value={sel.unidades || ""}
-                                          onChange={e => {
-                                            const v = Math.max(0, Number(e.target.value))
+                                            if (v > maxU) v = maxU
                                             setBlisterUnidadSeleccion(prev => ({
                                               ...prev,
                                               [prod.codigoBarras]: {
-                                                blisters: 0,
+                                                blisters:
+                                                  prev[prod.codigoBarras]?.blisters ?? 0,
                                                 unidades: v
                                               }
                                             }))
                                           }}
                                         />
                                       </div>
-                                    )}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="align-top text-right">
-                                  <Button
-                                    size="sm"
-                                    className="text-xs"
-                                    onClick={() => agregarAlCarrito(prod)}
-                                    disabled={prod.cantidadGeneral === 0}
-                                  >
-                                    <Plus className="h-4 w-4 mr-1" />
-                                    Agregar
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            )
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[9px]">Unidades</span>
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        max={prod.cantidadGeneral}
+                                        className="w-16 h-7 text-[11px]"
+                                        value={sel.unidades || ""}
+                                        onChange={e => {
+                                          const v = Math.max(0, Number(e.target.value))
+                                          setBlisterUnidadSeleccion(prev => ({
+                                            ...prev,
+                                            [prod.codigoBarras]: {
+                                              blisters: 0,
+                                              unidades: v
+                                            }
+                                          }))
+                                        }}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="align-top text-right">
+                                <Button
+                                  size="sm"
+                                  className="text-xs"
+                                  onClick={() => agregarAlCarrito(prod)}
+                                  disabled={prod.cantidadGeneral === 0}
+                                >
+                                  <Plus className="h-4 w-4 mr-1" />
+                                  Agregar
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
                   </div>
-                )}
-              </CardContent>
-            </GlassPanel>
+                </div>
+              )}
+            </CardContent>
+          </GlassPanel>
 
           {/* Carrito */}
           <GlassPanel>
@@ -1301,106 +1308,106 @@ export default function NuevaVentaPage() {
           </GlassPanel>
 
           {/* Método de Pago */}
-          <GlassPanel>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <CreditCard className="h-5 w-5 text-primary" />
-                Método de Pago
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <RadioGroup
-                value={metodoPago}
-                onValueChange={v => {
-                  setMetodoPago(v as MetodoPago)
-                  setMontoEfectivo("")
-                  setMontoYape("")
-                }}
-                className="grid gap-2 text-sm"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="efectivo" id="p-efectivo" />
-                  <Label htmlFor="p-efectivo">Efectivo</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="yape" id="p-yape" />
-                  <Label htmlFor="p-yape">Yape</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="mixto" id="p-mixto" />
-                  <Label htmlFor="p-mixto">Mixto</Label>
-                </div>
-              </RadioGroup>
+            <GlassPanel>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <CreditCard className="h-5 w-5 text-primary" />
+                  Método de Pago
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <RadioGroup
+                  value={metodoPago}
+                  onValueChange={v => {
+                    setMetodoPago(v as MetodoPago)
+                    setMontoEfectivo("")
+                    setMontoYape("")
+                  }}
+                  className="grid gap-2 text-sm"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="efectivo" id="p-efectivo" />
+                    <Label htmlFor="p-efectivo">Efectivo</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="yape" id="p-yape" />
+                    <Label htmlFor="p-yape">Yape</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="mixto" id="p-mixto" />
+                    <Label htmlFor="p-mixto">Mixto</Label>
+                  </div>
+                </RadioGroup>
 
-              {metodoPago === "efectivo" && (
-                <div className="space-y-2">
-                  <Label htmlFor="monto-efectivo">Monto efectivo</Label>
-                  <Input
-                    id="monto-efectivo"
-                    type="number"
-                    step="0.01"
-                    value={montoEfectivo}
-                    onChange={e => setMontoEfectivo(e.target.value)}
-                    placeholder="0.00"
-                  />
-                  {faltante > 0 && (
-                    <div className="text-xs text-red-600">
-                      Faltan S/ {faltante.toFixed(2)}
-                    </div>
-                  )}
-                </div>
-              )}
-              {metodoPago === "yape" && (
-                <div className="space-y-2">
-                  <Label htmlFor="monto-yape">Monto Yape</Label>
-                  <Input
-                    id="monto-yape"
-                    type="number"
-                    step="0.01"
-                    value={montoYape}
-                    onChange={e => setMontoYape(e.target.value)}
-                    placeholder="0.00"
-                  />
-                  {faltante > 0 && (
-                    <div className="text-xs text-red-600">
-                      Faltan S/ {faltante.toFixed(2)}
-                    </div>
-                  )}
-                </div>
-              )}
-              {metodoPago === "mixto" && (
-                <div className="grid gap-4 md:grid-cols-2">
+                {metodoPago === "efectivo" && (
                   <div className="space-y-2">
-                    <Label htmlFor="monto-efectivo-mixto">Efectivo</Label>
+                    <Label htmlFor="monto-efectivo">Monto efectivo</Label>
                     <Input
-                      id="monto-efectivo-mixto"
+                      id="monto-efectivo"
                       type="number"
                       step="0.01"
                       value={montoEfectivo}
                       onChange={e => setMontoEfectivo(e.target.value)}
                       placeholder="0.00"
                     />
+                    {faltante > 0 && (
+                      <div className="text-xs text-red-600">
+                        Faltan S/ {faltante.toFixed(2)}
+                      </div>
+                    )}
                   </div>
+                )}
+                {metodoPago === "yape" && (
                   <div className="space-y-2">
-                    <Label htmlFor="monto-yape-mixto">Yape</Label>
+                    <Label htmlFor="monto-yape">Monto Yape</Label>
                     <Input
-                      id="monto-yape-mixto"
+                      id="monto-yape"
                       type="number"
                       step="0.01"
                       value={montoYape}
                       onChange={e => setMontoYape(e.target.value)}
                       placeholder="0.00"
                     />
+                    {faltante > 0 && (
+                      <div className="text-xs text-red-600">
+                        Faltan S/ {faltante.toFixed(2)}
+                      </div>
+                    )}
                   </div>
-                  {faltante > 0 && (
-                    <div className="md:col-span-2 text-xs text-red-600">
-                      Faltan S/ {faltante.toFixed(2)}
+                )}
+                {metodoPago === "mixto" && (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="monto-efectivo-mixto">Efectivo</Label>
+                      <Input
+                        id="monto-efectivo-mixto"
+                        type="number"
+                        step="0.01"
+                        value={montoEfectivo}
+                        onChange={e => setMontoEfectivo(e.target.value)}
+                        placeholder="0.00"
+                      />
                     </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </GlassPanel>
+                    <div className="space-y-2">
+                      <Label htmlFor="monto-yape-mixto">Yape</Label>
+                      <Input
+                        id="monto-yape-mixto"
+                        type="number"
+                        step="0.01"
+                        value={montoYape}
+                        onChange={e => setMontoYape(e.target.value)}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    {faltante > 0 && (
+                      <div className="md:col-span-2 text-xs text-red-600">
+                        Faltan S/ {faltante.toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </GlassPanel>
 
           {/* Resumen */}
           <GlassPanel>

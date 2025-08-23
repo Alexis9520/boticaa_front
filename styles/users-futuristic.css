@@ -1,0 +1,347 @@
+/* ================= FUTURISTIC USERS PAGE (Light neutral + Dark vivid) ================= */
+
+/* ---------- Control global de intensidades (ajusta estos valores) ---------- */
+:root {
+  --accent-cyan: 56 189 248;
+  --accent-emerald: 16 185 129;
+  --accent-sky: 14 165 233;
+
+  --accent-alpha-bg: 0.10;
+  --accent-alpha-hover: 0.18;
+  --accent-alpha-border: 0.25;
+
+  --u-radius: 14px;
+  --u-ease: cubic-bezier(.16,1,.3,1);
+
+  /* NUEVAS VARIABLES PARA TEXTO EN CARTAS (modo claro) */
+  --u-metric-value-light: #0f1e2b; /* gris petróleo moderno */
+  --u-metric-label-light: #2f4958; /* label neutro oscuro */
+  --u-metric-sub-light: #5a6e7d;   /* subtítulo */
+}
+
+/* ---------- Light theme (neutral surfaces) ---------- */
+html.light {
+  --u-surface: linear-gradient(145deg,#ffffff 0%,#f8fafc 60%,#f2f5f8 100%);
+  --u-surface-alt: linear-gradient(145deg,#ffffff,#f6f7f9 60%,#eef1f4);
+  --u-surface-muted: #fbfcfd;
+  --u-border: 0 0 0 1px rgba(0,0,0,0.07);
+  --u-border-color: rgba(0,0,0,0.10);
+  --u-border-strong: rgba(0,0,0,0.16);
+  --u-shadow-a: 0 2px 4px -2px rgba(0,0,0,0.05);
+  --u-shadow-b: 0 12px 28px -14px rgba(0,0,0,0.10);
+  --u-text-primary: #0f172a;
+  --u-text-secondary: #64748b;
+  --u-divider: rgba(0,0,0,0.08);
+  --u-table-header-bg: linear-gradient(90deg,#ffffff 0%,#f2f7fa 75%);
+  --u-table-header-border: rgba(0,0,0,0.06);
+  --u-table-row-hover: rgba(var(--accent-cyan) / 0.08);
+  --u-chip-bg: rgba(var(--accent-cyan) / 0.12);
+  --u-badge-admin: linear-gradient(120deg,rgba(var(--accent-cyan)/0.80),rgba(var(--accent-emerald)/0.80));
+  --u-badge-worker: linear-gradient(120deg,#cdd6de,#9aa7b5,#6b7786);
+  --u-toolbar-bg: linear-gradient(145deg,#ffffffcc,#f7fafbcc);
+  --u-toolbar-border: rgba(0,0,0,0.09);
+  --u-scroll-thumb: rgba(0,0,0,0.22);
+  --u-metric-icon-bg: rgba(var(--accent-cyan)/0.18);
+  --u-metric-icon-border: rgba(var(--accent-cyan)/0.25);
+  --u-metric-bg: var(--u-surface-alt);
+  --u-metric-bg-overlay: radial-gradient(circle at 85% 25%,rgba(var(--accent-cyan)/0.10),transparent 70%);
+  --u-metric-bar: linear-gradient(90deg,rgba(var(--accent-cyan)/0.28),rgba(var(--accent-emerald)/0.30));
+  --u-focus-ring: 0 0 0 2px rgba(var(--accent-cyan)/0.45);
+}
+
+/* ---------- Dark theme ---------- */
+html.dark {
+  --u-surface: linear-gradient(135deg,#041823,#061925 55%,#05131f 100%);
+  --u-surface-alt: linear-gradient(140deg,#061f2c,#071a26 60%,#061521);
+  --u-surface-muted: #06141f;
+  --u-border: 0 0 0 1px rgba(255,255,255,0.06);
+  --u-border-color: rgba(255,255,255,0.08);
+  --u-border-strong: rgba(255,255,255,0.15);
+  --u-shadow-a: 0 2px 4px -2px rgba(0,0,0,0.55);
+  --u-shadow-b: 0 14px 38px -16px rgba(0,0,0,0.6);
+  --u-text-primary: #f1f5f9;
+  --u-text-secondary: #93a4b6;
+  --u-divider: rgba(255,255,255,0.1);
+  --u-table-header-bg: linear-gradient(90deg,#051d2a 0%,#062533 75%);
+  --u-table-header-border: rgba(255,255,255,0.08);
+  --u-table-row-hover: rgba(var(--accent-cyan) / 0.12);
+  --u-chip-bg: rgba(var(--accent-cyan) / 0.15);
+  --u-badge-admin: linear-gradient(120deg,#0e7490,#0891b2 60%,#047857);
+  --u-badge-worker: linear-gradient(120deg,#334155,#475569,#1e293b);
+  --u-toolbar-bg: linear-gradient(140deg,rgba(4,24,35,0.78),rgba(5,22,32,0.74));
+  --u-toolbar-border: rgba(255,255,255,0.08);
+  --u-scroll-thumb: rgba(255,255,255,0.18);
+  --u-metric-icon-bg: rgba(var(--accent-cyan)/0.22);
+  --u-metric-icon-border: rgba(var(--accent-cyan)/0.32);
+  --u-metric-bg: var(--u-surface-alt);
+  --u-metric-bg-overlay: radial-gradient(circle at 80% 28%,rgba(var(--accent-cyan)/0.18),transparent 70%);
+  --u-metric-bar: linear-gradient(90deg,rgba(var(--accent-cyan)/0.55),rgba(var(--accent-emerald)/0.55));
+  --u-focus-ring: 0 0 0 2px rgba(var(--accent-cyan)/0.55);
+}
+
+/* ================= Background layer ================= */
+.users-gradient-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+.users-gradient-bg .layer {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 25%,rgba(var(--accent-cyan)/0.15),transparent 60%),
+    radial-gradient(circle at 82% 70%,rgba(var(--accent-emerald)/0.12),transparent 65%);
+  mix-blend-mode: overlay;
+  opacity: .55;
+}
+html.light .users-gradient-bg .layer {
+  background:
+    radial-gradient(circle at 20% 22%,rgba(var(--accent-cyan)/0.16),transparent 62%),
+    radial-gradient(circle at 78% 68%,rgba(var(--accent-emerald)/0.12),transparent 68%);
+  opacity:.32;
+}
+
+/* ================= Metric Cards ================= */
+.metric-card {
+  position: relative;
+  border-radius: var(--u-radius);
+  padding: 1.05rem 1.1rem 1rem;
+  background: var(--u-metric-bg);
+  border: 1px solid var(--u-border-color);
+  box-shadow: var(--u-shadow-a), var(--u-shadow-b);
+  backdrop-filter: blur(10px) saturate(1.05);
+  -webkit-backdrop-filter: blur(10px) saturate(1.05);
+  transition: box-shadow .5s var(--u-ease), transform .5s var(--u-ease), border-color .4s;
+  overflow: hidden;
+}
+.metric-card::after {
+  content:"";
+  position:absolute;
+  inset:0;
+  background: var(--u-metric-bg-overlay);
+  pointer-events:none;
+  opacity:.45;
+  mix-blend-mode:overlay;
+}
+.metric-card::before {
+  content:"";
+  position:absolute;
+  top:0; left:0; right:0; height:3px;
+  background: var(--u-metric-bar);
+  opacity:.42;
+  transition:opacity .5s;
+}
+.metric-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--u-border-strong);
+  box-shadow: var(--u-shadow-a), var(--u-shadow-b), 0 6px 26px -10px rgba(var(--accent-cyan)/0.26);
+}
+.metric-card:hover::before { opacity:.8; }
+html.light .metric-card {
+  border-color: rgba(0,0,0,0.08);
+  box-shadow: var(--u-shadow-a), var(--u-shadow-b);
+}
+html.light .metric-card:hover {
+  box-shadow: 0 3px 6px -3px rgba(0,0,0,0.08), 0 14px 32px -14px rgba(0,0,0,0.16), 0 0 0 1px rgba(var(--accent-cyan)/0.22);
+}
+
+/* Icon bubble */
+.metric-card .metric-icon {
+  height: 2.4rem;
+  width: 2.4rem;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius: .9rem;
+  background: var(--u-metric-icon-bg);
+  border: 1px solid var(--u-metric-icon-border);
+  color: rgb(var(--accent-cyan));
+  backdrop-filter: blur(6px);
+  font-size: .95rem;
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-cyan)/0.25);
+}
+
+/* Label / Value / Sub (MODERN DARK TEXT FOR LIGHT) */
+.metric-card .metric-label {
+  font-size: .64rem;
+  letter-spacing:.09em;
+  text-transform:uppercase;
+  font-weight:600;
+  color: rgba(var(--accent-cyan)/0.70);
+  transition: color .4s;
+}
+html.light .metric-card .metric-label {
+  color: var(--u-metric-label-light);
+}
+.metric-card:hover .metric-label {
+  color: rgba(var(--accent-cyan)/0.85);
+}
+html.light .metric-card:hover .metric-label {
+  color: #163a48;
+}
+
+.metric-card .metric-value {
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  line-height:1.1;
+  background: linear-gradient(90deg,rgba(var(--accent-cyan)/0.92),rgba(var(--accent-emerald)/0.90));
+  -webkit-background-clip:text;
+  color: transparent;
+}
+html.light .metric-card .metric-value {
+  background: none;
+  -webkit-background-clip: initial;
+  color: var(--u-metric-value-light);
+}
+
+.metric-card .metric-sub {
+  margin-top:.35rem;
+  font-size:.70rem;
+  letter-spacing:.02em;
+  color: var(--u-text-secondary);
+}
+html.light .metric-card .metric-sub {
+  color: var(--u-metric-sub-light);
+}
+
+/* Intense variant (opcional) */
+html.light .metric-card.intense .metric-value {
+  background: linear-gradient(90deg,rgba(var(--accent-cyan)/0.95),rgba(var(--accent-emerald)/0.90));
+  -webkit-background-clip:text;
+  color:transparent;
+}
+
+/* ================= Toolbar ================= */
+.toolbar-glass {
+  border: 1px solid var(--u-toolbar-border);
+  background: var(--u-toolbar-bg);
+  backdrop-filter: blur(10px) saturate(1.05);
+  -webkit-backdrop-filter: blur(10px) saturate(1.05);
+  border-radius: var(--u-radius);
+  padding: .85rem 1rem;
+  box-shadow: var(--u-shadow-a);
+  transition: border-color .3s, background-color .4s;
+}
+.toolbar-glass:hover {
+  border-color: var(--u-border-strong);
+}
+
+/* ================= Table ================= */
+.futuristic-table-wrapper {
+  border: 1px solid var(--u-border-color);
+  border-radius: var(--u-radius);
+  overflow: hidden;
+  background: var(--u-surface);
+  box-shadow: var(--u-shadow-a), var(--u-shadow-b);
+  backdrop-filter: blur(8px) saturate(1.04);
+  -webkit-backdrop-filter: blur(8px) saturate(1.04);
+  transition: box-shadow .45s var(--u-ease);
+}
+
+.futuristic-table-wrapper table thead tr {
+  background: var(--u-table-header-bg);
+}
+.futuristic-table-wrapper table thead th {
+  font-size: .68rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--u-text-secondary);
+  border-bottom: 1px solid var(--u-table-header-border);
+}
+html.dark .futuristic-table-wrapper table thead th {
+  color: #cbd5e1;
+}
+
+.futuristic-table-wrapper tbody tr {
+  transition: background-color .28s, box-shadow .35s;
+}
+.futuristic-table-wrapper tbody tr:hover {
+  background: var(--u-table-row-hover);
+}
+html.light .futuristic-table-wrapper tbody tr:hover {
+  background: rgba(var(--accent-cyan) / 0.10);
+}
+
+/* ================= Role Badges ================= */
+.role-badge {
+  border-radius: 9999px;
+  padding: .30rem .7rem;
+  font-size: .63rem;
+  letter-spacing:.04em;
+  font-weight:600;
+  display:inline-flex;
+  align-items:center;
+  gap:.35rem;
+  line-height:1;
+  color:#fff;
+  position:relative;
+  box-shadow:0 1px 2px rgba(0,0,0,0.25);
+}
+.role-badge.admin { background: var(--u-badge-admin); }
+.role-badge.worker { background: var(--u-badge-worker); color:#f1f5f9; }
+html.light .role-badge.worker { color:#fff; }
+
+/* ================= Action Icon Buttons ================= */
+.action-icon-btn {
+  position: relative;
+  border-radius: 0.65rem;
+  height: 2.05rem;
+  width: 2.05rem;
+  display: inline-flex;
+  align-items:center;
+  justify-content:center;
+  transition: background-color .25s, box-shadow .4s, transform .35s;
+  background: transparent;
+  color: var(--u-text-primary);
+}
+.action-icon-btn:hover {
+  background: linear-gradient(135deg,rgba(var(--accent-cyan)/0.18),rgba(var(--accent-emerald)/0.15));
+  box-shadow: 0 0 0 1px rgba(var(--accent-cyan)/0.35);
+  transform: translateY(-2px);
+}
+html.light .action-icon-btn:hover {
+  background: linear-gradient(135deg,rgba(var(--accent-cyan)/0.16),rgba(var(--accent-emerald)/0.14));
+}
+
+/* ================= Search input ================= */
+.search-input { padding-left: 2rem !important; }
+
+/* ================= Empty / Loading ================= */
+.empty-state {
+  text-align: center;
+  padding: 3rem 0 2.8rem;
+  color: var(--u-text-secondary);
+  font-size: .9rem;
+}
+
+/* ================= Scrollbars ================= */
+.embedded-ticket-scroll::-webkit-scrollbar,
+.futuristic-table-wrapper::-webkit-scrollbar { height:8px; width:8px; }
+.embedded-ticket-scroll::-webkit-scrollbar-thumb,
+.futuristic-table-wrapper::-webkit-scrollbar-thumb {
+  background: var(--u-scroll-thumb);
+  border-radius: 4px;
+}
+
+/* ================= Dialog glass ================= */
+.dialog-glass {
+  backdrop-filter: blur(18px) saturate(1.12);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+}
+
+/* ================= Focus ring ================= */
+*:focus-visible {
+  outline: none;
+  box-shadow: var(--u-focus-ring);
+  transition: box-shadow .3s;
+}
+
+/* ================= Intense variant (solo si quieres reactivar degradé en modo claro) ================= */
+html.light .metric-card.intense .metric-value {
+  background: linear-gradient(90deg,rgba(var(--accent-cyan)/0.95),rgba(var(--accent-emerald)/0.90));
+  -webkit-background-clip:text;
+  color:transparent;
+}

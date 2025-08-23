@@ -1,7 +1,7 @@
 import React, { useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/lib/use-toast"
 import { apiUrl } from "@/components/config"
 
 type Props = {

@@ -1,0 +1,74 @@
+/* Variables base Light */
+:root {
+  --accent: #6366F1;
+  --accent-alt: #06B6D4;
+  --gradient-accent: linear-gradient(135deg, var(--accent) 0%, var(--accent-alt) 100%);
+  --radius-base: 12px;
+  --density-scale: 1;
+  --glass-alpha: 0.55;
+  --noise-opacity: 0.12;
+  --shadow-strength: .5;
+  --glow-enabled: 1;
+  --font-user: var(--font-sans, system-ui);
+  --font-mono-user: var(--font-mono, ui-monospace);
+
+  --surface-glass: color-mix(in srgb, #ffffff 65%, transparent);
+  --surface-glass-alt: color-mix(in srgb, #ffffff 75%, transparent);
+  --surface-border: rgba(0 0 0 / 0.08);
+  --text-primary: #0f1115;
+  --text-secondary: #4a5365;
+}
+/* Dark */
+.dark {
+  --surface-glass: rgba(24 26 38 / var(--glass-alpha));
+  --surface-glass-alt: rgba(30 32 45 / calc(var(--glass-alpha) + 0.1));
+  --surface-border: rgba(255 255 255 / 0.08);
+  --text-primary: #f7f9fc;
+  --text-secondary: #a6b1c5;
+}
+
+/* Utilidades genéricas ligadas a tokens */
+body {
+  font-family: var(--font-user);
+}
+
+.ui-panel {
+  background: var(--surface-glass);
+  backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-base);
+  box-shadow:
+    0 4px 18px -6px rgba(0 0 0 / calc(0.35 * var(--shadow-strength))),
+    0 0 0 1px rgba(255 255 255 / 0.03);
+  position: relative;
+  overflow: hidden;
+}
+
+.ui-panel[data-glow="true"]::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  opacity: calc(.55 * var(--glow-enabled));
+  background:
+    radial-gradient(circle at 20% 15%, var(--accent)22, transparent 60%),
+    radial-gradient(circle at 85% 80%, var(--accent-alt)18, transparent 70%);
+  mix-blend-mode: plus-lighter;
+}
+
+.noise-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--noise-opacity);
+  background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAQAAACqIy7XAAAAFElEQVR42u3MMQ0AAAwCoNm/9HI83BBgvQYAAH8q0OsAAAAASUVORK5CYII=");
+  mix-blend-mode: overlay;
+}
+
+/* Densidad: multiplicador */
+[data-density="compact"] .density-scale { --density-scale: .75 }
+[data-density="comfortable"] .density-scale { --density-scale: 1.2 }
+
+.density-pad {
+  padding: calc(0.75rem * var(--density-scale)) calc(1rem * var(--density-scale));
+}

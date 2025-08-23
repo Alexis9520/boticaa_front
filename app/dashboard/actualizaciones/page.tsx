@@ -47,41 +47,124 @@ interface ChangeEntry {
   issueRef?: string | number
   breaking?: boolean
   scope?: string
-  highlight?: boolean         // Para resaltar entradas clave
+  highlight?: boolean
 }
 
 interface VersionLog {
   version: string
-  date: string      // YYYY-MM-DD
+  date: string
   tag?: string
   entries: ChangeEntry[]
   summary?: string
   contributors?: string[]
-  impactScore?: number         // 1–100 indicador visual
+  impactScore?: number
 }
 
 /* ============================================================
    CHANGELOG
-   Nueva versión 1.4.3 (2025-08-14)
-   Mejora visual (UI Futurista) aplicada a ~50% de las páginas.
-   Incluye: gradientes dinámicos, tarjetas “glass”, timeline animado,
-   nueva paleta accesible, badges de alcance y puntuación de impacto.
-
-   SemVer: PATCH al ser actualización incremental sin breaking changes.
+   Añadida versión 1.5.0 (Rediseño completo + mejoras mayores)
    ============================================================ */
 const CHANGELOG: VersionLog[] = [
+  {
+    version: "1.5.0",
+    date: "2025-08-22",
+    tag: "stable",
+    summary:
+      "Fase de rediseño completada (100%). Se refuerza la seguridad del login, se amplían opciones de configuración, mejora radical de responsividad móvil y se corrigen fallos críticos en tablas y carrito de ventas.",
+    impactScore: 93,
+    contributors: ["core-ui", "design-lab", "security-team"],
+    entries: [
+      {
+        type: "ux",
+        title: "Rediseño visual fase final",
+        description:
+          "Aplicación del nuevo sistema de diseño (glass, gradientes dinámicos, tipografía fluida y animaciones) al 100% de las vistas restantes (Reportes, Configuración avanzada, Perfil, Autenticación).",
+        scope: "UI/Global",
+        highlight: true
+      },
+      {
+        type: "fixed",
+        title: "Correcciones masivas en tablas",
+        description:
+          "Se solucionaron errores de ordenamiento inestable, scroll desalineado, tooltips truncados y saltos de layout al paginar.",
+        scope: "Tablas",
+        highlight: true
+      },
+      {
+        type: "security",
+        title: "Endurecimiento de autenticación",
+        description:
+          "Validación adicional de horario + bloqueo progresivo tras intentos fallidos, limpieza de sesiones huérfanas y verificación consistente de zona horaria.",
+        scope: "Auth/Login",
+        highlight: true
+      },
+      {
+        type: "added",
+        title: "Funciones ampliadas en Configuración",
+        description:
+          "Nuevas secciones: parámetros de impresión avanzados, gestión de variables de negocio, control granular de permisos y vista previa en vivo.",
+        scope: "Configuración"
+      },
+      {
+        type: "ux",
+        title: "Mejor responsividad móvil",
+        description:
+          "Refactor de rejillas y componentes adaptativos (carritos, tablas compactas, formularios de venta y panel de caja). Reducción de overflow horizontal.",
+        scope: "Responsive/Mobile",
+        highlight: true
+      },
+      {
+        type: "fixed",
+        title: "Carrito de ventas: ajuste de cantidades",
+        description:
+          "Ahora es posible incrementar o disminuir correctamente blisters y unidades aunque el producto ya no esté en los resultados de búsqueda (se cachea stock en el ítem).",
+        scope: "Ventas/Carrito",
+        highlight: true
+      },
+      {
+        type: "changed",
+        title: "Medición de impacto refinada",
+        description:
+          "Algoritmo de score pondera ahora superficies afectadas, criticidad (seguridad) y cambios UX para priorizar QA.",
+        scope: "Changelog"
+      },
+      {
+        type: "perf",
+        title: "Optimización de carga diferida",
+        description:
+          "División de bundles en rutas de autenticación y configuración; reducción de primeras pinturas en ~18%.",
+        scope: "Performance"
+      },
+      {
+        type: "internal",
+        title: "Refactor de hooks de sesión",
+        description:
+          "Unificación de lógica de expiración, limpieza y sincronización de storage para reducir estados inconsistentes.",
+        scope: "Core/Auth"
+      },
+      {
+        type: "fixed",
+        title: "Errores residuales de impresión",
+        description:
+          "La vista previa ya no pierde estilos al abrir múltiples tickets simultáneamente.",
+        scope: "Impresión"
+      }
+    ]
+  },
   {
     version: "1.4.3",
     date: "2025-08-14",
     tag: "stable",
-    summary: "Primera fase del rediseño aplicado a las vistas principales (Dashboard, Caja, Ventas, Productos, Changelog).",
+    summary:
+      "Primera fase del rediseño aplicado a las vistas principales (Dashboard, Caja, Ventas, Productos, Changelog).",
     impactScore: 82,
     contributors: ["core-ui", "design-lab"],
     entries: [
       {
         type: "ux",
         title: "Rediseño visual fase 1",
-        description: "Aplicación de estilo glass + gradientes dinámicos y animaciones sutiles en ~50% de las pantallas.",
+        description:
+          "Aplicación de estilo glass + gradientes dinámicos y animaciones sutiles en ~50% de las pantallas.",
         highlight: true,
         scope: "UI"
       },
@@ -94,7 +177,8 @@ const CHANGELOG: VersionLog[] = [
       {
         type: "perf",
         title: "Reducción de layout shift",
-        description: "Placeholder shimmer en componentes con datos asíncronos para estabilizar la carga.",
+        description:
+          "Placeholder shimmer en componentes con datos asíncronos para estabilizar la carga.",
         scope: "Performance"
       },
       {
@@ -106,19 +190,22 @@ const CHANGELOG: VersionLog[] = [
       {
         type: "added",
         title: "Badges de alcance (scope)",
-        description: "Se muestra el módulo o área afectada por cada cambio.",
+        description:
+          "Se muestra el módulo o área afectada por cada cambio.",
         scope: "Changelog/UX"
       },
       {
         type: "changed",
         title: "Filtro avanzado en historial",
-        description: "Búsqueda con resaltado, atajo ( / ) y persistencia temporal.",
+        description:
+          "Búsqueda con resaltado, atajo ( / ) y persistencia temporal.",
         scope: "Changelog"
       },
       {
         type: "internal",
         title: "Refactor de componentes de Tag",
-        description: "Unificación de estilos en un sistema de variantes semánticas.",
+        description:
+          "Unificación de estilos en un sistema de variantes semánticas.",
         scope: "Codebase"
       }
     ]
@@ -131,25 +218,29 @@ const CHANGELOG: VersionLog[] = [
       {
         type: "changed",
         title: "Orden de tablas de cajas",
-        description: "Listados ahora se ordenan por fecha de apertura descendente y soportan ordenamiento secundario estable.",
+        description:
+          "Listados ahora se ordenan por fecha de apertura descendente y soportan ordenamiento secundario estable.",
         scope: "Caja"
       },
       {
         type: "added",
         title: "Más características visibles en detalle de venta",
-        description: "Se muestran columnas y etiquetas adicionales (método de pago combinado, totales segmentados, usuario de registro).",
+        description:
+          "Se muestran columnas y etiquetas adicionales (método de pago combinado, totales segmentados, usuario de registro).",
         scope: "Ventas"
       },
       {
         type: "fixed",
         title: "Consistencia de totales tras filtrar por usuario",
-        description: "Los subtotales ya no se recalculan con desajustes al alternar usuarios rápidamente.",
+        description:
+          "Los subtotales ya no se recalculan con desajustes al alternar usuarios rápidamente.",
         scope: "Ventas"
       },
       {
         type: "internal",
         title: "Refactor de consultas de historial de caja",
-        description: "Se consolidó la lógica para reducir consultas N+1 y preparar soporte de paginación.",
+        description:
+          "Se consolidó la lógica para reducir consultas N+1 y preparar soporte de paginación.",
         scope: "Caja/DB"
       }
     ]
@@ -162,13 +253,15 @@ const CHANGELOG: VersionLog[] = [
       {
         type: "fixed",
         title: "Corrección de zona horaria",
-        description: "Validaciones y controles ahora usan America/Lima y no la hora del servidor.",
+        description:
+          "Validaciones y controles ahora usan America/Lima y no la hora del servidor.",
         scope: "Auth"
       },
       {
         type: "fixed",
         title: "Acceso post-horario",
-        description: "Los trabajadores no quedan bloqueados injustamente por desfase horario del servidor.",
+        description:
+          "Los trabajadores no quedan bloqueados injustamente por desfase horario del servidor.",
         scope: "Auth"
       }
     ]
@@ -180,25 +273,29 @@ const CHANGELOG: VersionLog[] = [
       {
         type: "added",
         title: "Principio activo en productos",
-        description: "Campo para registrar el componente farmacológico principal.",
+        description:
+          "Campo para registrar el componente farmacológico principal.",
         scope: "Productos"
       },
       {
         type: "added",
         title: "Tipo de medicamento (genérico / marca)",
-        description: "Clasificación que permite mejores filtros y reportes.",
+        description:
+          "Clasificación que permite mejores filtros y reportes.",
         scope: "Productos"
       },
       {
         type: "added",
         title: "Código de lote",
-        description: "Soporte de lote por producto para trazabilidad y control de vencimientos.",
+        description:
+          "Soporte de lote por producto para trazabilidad y control de vencimientos.",
         scope: "Inventario"
       },
       {
         type: "fixed",
         title: "Actualización de productos",
-        description: "Errores al editar se corrigieron (validaciones y persistencia).",
+        description:
+          "Errores al editar se corrigieron (validaciones y persistencia).",
         scope: "Productos"
       }
     ]
@@ -211,19 +308,22 @@ const CHANGELOG: VersionLog[] = [
       {
         type: "security",
         title: "Cambio de contraseña (solo administradores)",
-        description: "Funcionalidad para que administradores gestionen credenciales de usuarios.",
+        description:
+          "Funcionalidad para que administradores gestionen credenciales de usuarios.",
         scope: "Seguridad"
       },
       {
         type: "security",
         title: "Restricción de acceso fuera del horario",
-        description: "Trabajadores no pueden iniciar sesión después de su hora de salida.",
+        description:
+          "Trabajadores no pueden iniciar sesión después de su hora de salida.",
         scope: "Auth"
       },
       {
         type: "security",
         title: "Ingreso exclusivo para cierre de caja",
-        description: "Si no cerraron caja a tiempo, solo se les permite entrar para cerrarla.",
+        description:
+          "Si no cerraron caja a tiempo, solo se les permite entrar para cerrarla.",
         scope: "Caja"
       }
     ]
@@ -235,13 +335,15 @@ const CHANGELOG: VersionLog[] = [
       {
         type: "added",
         title: "Más estadísticas en el Dashboard",
-        description: "Nuevas métricas para mayor visibilidad del rendimiento.",
+        description:
+          "Nuevas métricas para mayor visibilidad del rendimiento.",
         scope: "Dashboard"
       },
       {
         type: "fixed",
         title: "Movimientos de caja",
-        description: "Corrección de inconsistencias en registro y visualización.",
+        description:
+          "Corrección de inconsistencias en registro y visualización.",
         scope: "Caja"
       }
     ]
@@ -271,7 +373,8 @@ const CHANGELOG: VersionLog[] = [
       {
         type: "fixed",
         title: "Visual del Dashboard",
-        description: "Corrección de desalineaciones y componentes que no cargaban.",
+        description:
+          "Corrección de desalineaciones y componentes que no cargaban.",
         scope: "Dashboard"
       }
     ]
@@ -281,7 +384,8 @@ const CHANGELOG: VersionLog[] = [
 // Derivado
 const LATEST_VERSION = CHANGELOG[0]?.version
 function isRecent(dateStr: string) {
-  const diffDays = (Date.now() - new Date(dateStr + "T00:00:00").getTime()) / 86400000
+  const diffDays =
+    (Date.now() - new Date(dateStr + "T00:00:00").getTime()) / 86400000
   return diffDays <= 7
 }
 
@@ -404,7 +508,9 @@ function VersionBlock({
   const markText = useCallback(
     (text: string) => {
       if (!highlightQuery.trim()) return text
-      const parts = text.split(new RegExp(`(${escapeRegExp(highlightQuery)})`, "ig"))
+      const parts = text.split(
+        new RegExp(`(${escapeRegExp(highlightQuery)})`, "ig")
+      )
       return parts.map((p, i) =>
         p.toLowerCase() === highlightQuery.toLowerCase() ? (
           <mark
@@ -423,7 +529,6 @@ function VersionBlock({
 
   useEffect(() => {
     if (!highlightQuery || !open) return
-    // scroll suave al abrir el primer match
     if (containerRef.current && index === 0) {
       const el = containerRef.current.querySelector("mark")
       if (el) el.scrollIntoView({ behavior: "smooth", block: "center" })
@@ -440,7 +545,6 @@ function VersionBlock({
         index === 0 && "ring-1 ring-primary/40 shadow-lg"
       )}
     >
-      {/* Decor */}
       <div className="pointer-events-none absolute inset-0 opacity-40">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,hsl(var(--primary)/0.15),transparent_60%),radial-gradient(circle_at_85%_80%,hsl(var(--secondary)/0.15),transparent_55%)]" />
       </div>
@@ -530,7 +634,6 @@ function VersionBlock({
       {open && (
         <CardContent className="pt-0 relative z-10">
           <div className="relative mt-2 pl-6">
-            {/* Timeline vertical line */}
             <div className="absolute left-0 top-0 bottom-0 w-px bg-gradient-to-b from-primary/40 via-border to-transparent" />
             <ul className="space-y-6">
               {version.entries.map((e, i) => {
@@ -546,7 +649,6 @@ function VersionBlock({
                       accent
                     )}
                   >
-                    {/* Node */}
                     <span className="absolute left-[-11px] top-5 h-2.5 w-2.5 rounded-full bg-gradient-to-tr from-primary to-primary/40 shadow ring-4 ring-background group-hover:scale-125 transition-transform" />
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       <TypeBadge type={e.type} />
@@ -597,7 +699,6 @@ export default function ActualizacionesPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [onlyHighlighted, setOnlyHighlighted] = useState(false)
 
-  // Persistencia temporal (session)
   useEffect(() => {
     const saved = sessionStorage.getItem("changelog_filters")
     if (saved) {
@@ -622,11 +723,14 @@ export default function ActualizacionesPage() {
     return () => window.removeEventListener("scroll", onScroll)
   }, [])
 
-  // Atajo '/' para enfocar buscador
   const searchRef = useRef<HTMLInputElement | null>(null)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "/" && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
+      if (
+        e.key === "/" &&
+        document.activeElement?.tagName !== "INPUT" &&
+        document.activeElement?.tagName !== "TEXTAREA"
+      ) {
         e.preventDefault()
         searchRef.current?.focus()
       }
@@ -640,24 +744,30 @@ export default function ActualizacionesPage() {
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase()
-    return CHANGELOG
-      .map(v => {
-        const entries = v.entries.filter(e => {
-          const textBucket = (e.title + " " + (e.description || "") + " " + (e.scope || "")).toLowerCase()
-          const matchText = !query || textBucket.includes(query)
-          const matchType = types.length === 0 || types.includes(e.type)
-          const matchHighlight = !onlyHighlighted || e.highlight
-          return matchText && matchType && matchHighlight
-        })
-        return { ...v, entries }
+    return CHANGELOG.map(v => {
+      const entries = v.entries.filter(e => {
+        const textBucket = (
+          e.title +
+          " " +
+          (e.description || "") +
+          " " +
+          (e.scope || "")
+        ).toLowerCase()
+        const matchText = !query || textBucket.includes(query)
+        const matchType = types.length === 0 || types.includes(e.type)
+        const matchHighlight = !onlyHighlighted || e.highlight
+        return matchText && matchType && matchHighlight
       })
-      .filter(v => v.entries.length > 0)
+      return { ...v, entries }
+    }).filter(v => v.entries.length > 0)
   }, [q, types, onlyHighlighted])
 
   if (loading || !user) return <Spinner />
 
   const toggleType = (t: ChangeType) => {
-    setTypes(prev => (prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]))
+    setTypes(prev =>
+      prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]
+    )
   }
   const resetFilters = () => {
     setQ("")
@@ -671,7 +781,6 @@ export default function ActualizacionesPage() {
     <div className="relative flex flex-col gap-10">
       <BackgroundFX />
 
-      {/* Header */}
       <header className="relative z-10 space-y-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="space-y-3">
@@ -682,22 +791,24 @@ export default function ActualizacionesPage() {
             <p className="text-sm text-muted-foreground max-w-2xl flex items-center gap-2">
               <Brush className="h-4 w-4 text-primary/60" />
               Evolución continua de la plataforma. Última versión:{" "}
-              <span className="font-semibold text-foreground">v{LATEST_VERSION}</span>
+              <span className="font-semibold text-foreground">
+                v{LATEST_VERSION}
+              </span>
             </p>
             <div className="flex flex-wrap gap-4 text-[11px] text-muted-foreground uppercase tracking-wide">
               <div className="flex items-center gap-1">
                 <Hourglass className="h-3.5 w-3.5" /> {CHANGELOG.length} versiones
               </div>
               <div className="flex items-center gap-1">
-                <Cpu className="h-3.5 w-3.5" /> Atajo búsqueda: <kbd className="px-1 py-0.5 rounded bg-muted">/</kbd>
+                <Cpu className="h-3.5 w-3.5" /> Atajo búsqueda:{" "}
+                <kbd className="px-1 py-0.5 rounded bg-muted">/</kbd>
               </div>
               <div className="flex items-center gap-1">
-                <Rocket className="h-3.5 w-3.5" /> Fase actual: Rediseño (50%)
+                <Rocket className="h-3.5 w-3.5" /> Rediseño completado
               </div>
             </div>
           </div>
 
-          {/* Quick actions */}
           <div className="flex items-stretch gap-3 self-start">
             <Button
               size="sm"
@@ -718,14 +829,18 @@ export default function ActualizacionesPage() {
               {showFilters ? "Ocultar filtros" : "Mostrar filtros"}
             </Button>
             {activeFilters && (
-              <Button size="sm" variant="outline" onClick={resetFilters} className="gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={resetFilters}
+                className="gap-1"
+              >
                 <X className="h-4 w-4" /> Limpiar
               </Button>
             )}
           </div>
         </div>
 
-        {/* Filtros */}
         <div
           className={cn(
             "grid gap-6 transition-all origin-top",
@@ -813,7 +928,6 @@ export default function ActualizacionesPage() {
         </div>
       </header>
 
-      {/* Lista de versiones */}
       <div className="relative z-10 space-y-10">
         {filtered.length === 0 && (
           <div className="text-sm text-muted-foreground py-14 text-center border rounded-xl backdrop-blur bg-background/40">
@@ -831,7 +945,6 @@ export default function ActualizacionesPage() {
         ))}
       </div>
 
-      {/* Botón volver arriba */}
       <AnimatePresence>
         {showTop && (
           <button

@@ -22,7 +22,7 @@ import {
   Minimize2,
   Filter
 } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/lib/use-toast"
 import { fetchWithAuth } from "@/lib/api"
 import { apiUrl } from "@/components/config"
 import clsx from "clsx"
