@@ -71,12 +71,12 @@ const navItems: NavItem[] = [
   { title: "Vender", href: "/dashboard/nueva", icon: Icons.nuevaVenta, order: 10 },
   { title: "Historial ventas", href: "/dashboard/ventas", icon: Icons.historialVentas, order: 11 },
   { title: "Caja", href: "/dashboard/caja", icon: Icons.caja, order: 12 },
-  { title: "Productos", href: "/dashboard/productos", icon: Icons.productos, order: 20 },
+  { title: "Productos", href: "/dashboard/productos", icon: Icons.productos, adminOnly: true, order: 20 },
   { title: "Stock", href: "/dashboard/stock", icon: Icons.stock, order: 21 },
   { title: "Reportes", href: "/dashboard/reportes", icon: Icons.reportes, adminOnly: true, order: 30 },
   { title: "Usuarios", href: "/dashboard/usuarios", icon: Icons.usuarios, adminOnly: true, order: 40 },
   { title: "Configuración", href: "/dashboard/configuracion", icon: Icons.configuracion, adminOnly: true, order: 41 },
-  { title: "Actualizaciones", href: "/dashboard/actualizaciones", icon: Icons.changelog, id: "changelog", order: 50 },
+  { title: "Actualizaciones", href: "/dashboard/actualizaciones", icon: Icons.changelog, adminOnly: true, id: "changelog", order: 50 },
   { title: "Desarrolladores", href: "/dashboard/desarrolladores", icon: Icons.desarrolladores, adminOnly: true, order: 60 },
 ]
 
