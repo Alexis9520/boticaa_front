@@ -841,15 +841,7 @@ export default function ProductosPage() {
                         }))
                       }
                     />
-                    <Field
-                      label="Descuento"
-                      type="number"
-                      step="0.01"
-                      value={nuevoProducto.descuento}
-                      onChange={v =>
-                        setNuevoProducto(p => ({ ...p, descuento: v }))
-                      }
-                    />
+                    
                   </div>
 
                   <div className="space-y-3 pt-2">

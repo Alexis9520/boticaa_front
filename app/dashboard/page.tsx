@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-
 import {
   AlertCircle,
   ArrowDown,
@@ -38,27 +37,28 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import SalesChart from "@/components/sales-chart"
 import Spinner from "@/components/ui/Spinner"
 
-/* -------------------- Tipos -------------------- */
-type VentasDia = { monto: number; variacion: number }
-type VentasMes = { monto: number; variacion: number }
+/* -------------------- Tipos con históricos -------------------- */
+type VentasDia = { monto: number; variacion: number; anterior: number }
+type VentasMes = { monto: number; variacion: number; anterior: number }
 type SaldoCaja = { total: number; efectivo: number; yape: number }
-type ClientesAtendidos = { cantidad: number; variacion: number }
+type ClientesAtendidos = { cantidad: number; variacion: number; anterior: number }
 type VentaReciente = { boleta: string; cliente: string; monto: number }
 type ProductoMasVendido = { nombre: string; unidades: number; porcentaje: number }
 type ProductoCritico = { nombre: string; stock: number }
 type ProductoVencimiento = { nombre: string; dias: number }
 type VentasPorHora = { hora: string; total: number }
 
-/* -------------------- Dashboard Futurista -------------------- */
+/* -------------------- Dashboard Futurista Moderno -------------------- */
 export default function Dashboard() {
   const { user, loading } = useAuth()
   const router = useRouter()
   const { toast } = useToast()
 
-  const [ventasDia, setVentasDia] = useState<VentasDia>({ monto: 0, variacion: 0 })
-  const [ventasMes, setVentasMes] = useState<VentasMes>({ monto: 0, variacion: 0 })
+  // Añadido valores anteriores
+  const [ventasDia, setVentasDia] = useState<VentasDia>({ monto: 0, variacion: 0, anterior: 0 })
+  const [ventasMes, setVentasMes] = useState<VentasMes>({ monto: 0, variacion: 0, anterior: 0 })
   const [saldoCaja, setSaldoCaja] = useState<SaldoCaja>({ total: 0, efectivo: 0, yape: 0 })
-  const [clientesAtendidos, setClientesAtendidos] = useState<ClientesAtendidos>({ cantidad: 0, variacion: 0 })
+  const [clientesAtendidos, setClientesAtendidos] = useState<ClientesAtendidos>({ cantidad: 0, variacion: 0, anterior: 0 })
   const [ultimasVentas, setUltimasVentas] = useState<VentaReciente[]>([])
   const [productosMasVendidos, setProductosMasVendidos] = useState<ProductoMasVendido[]>([])
   const [productosCriticos, setProductosCriticos] = useState<ProductoCritico[]>([])
@@ -67,16 +67,13 @@ export default function Dashboard() {
   const [tab, setTab] = useState<"ventas" | "productos">("ventas")
   const [refreshing, setRefreshing] = useState(false)
 
-  // Paginaciones nuevas
+  // Paginaciones
   const PAGE_SIZE_CRIT = 6
   const PAGE_SIZE_VENC = 5
   const [critPage, setCritPage] = useState(1)
   const [vencPage, setVencPage] = useState(1)
-
-  // Ajustar página al cambiar datasets
   useEffect(() => { setCritPage(1) }, [productosCriticos])
   useEffect(() => { setVencPage(1) }, [productosVencimiento])
-
   const critTotalPages = Math.max(1, Math.ceil(productosCriticos.length / PAGE_SIZE_CRIT))
   const vencTotalPages = Math.max(1, Math.ceil(productosVencimiento.length / PAGE_SIZE_VENC))
   const criticosPageItems = useMemo(
@@ -95,7 +92,7 @@ export default function Dashboard() {
     }
   }, [user, loading, router])
 
-  // Carga principal
+  // Carga principal (ahora espera que la API devuelva campos 'anterior' para día, mes y clientes)
   const fetchResumen = () => {
     setRefreshing(true)
     fetchWithAuth(apiUrl("/api/dashboard/resumen"), {}, toast)
@@ -121,7 +118,7 @@ export default function Dashboard() {
       .catch(() => setVentasPorHora([]))
   }, [toast])
 
-  // Derivados
+  // Derivados para caja
   const mediosCaja = useMemo(() => {
     const total = saldoCaja.total || 1
     const efectivoPct = (saldoCaja.efectivo / total) * 100
@@ -139,12 +136,11 @@ export default function Dashboard() {
       {/* Header */}
       <header className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 relative z-10">
         <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent flex items-center gap-2">
-            Dashboard 
-            
+          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary via-blue-500 to-fuchsia-500 bg-clip-text text-transparent flex items-center gap-2">
+            Dashboard
           </h1>
           <p className="text-sm text-muted-foreground">
-            Vista general en tiempo real del rendimiento de la botica
+            Vista general del rendimiento de la botica
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -171,26 +167,32 @@ export default function Dashboard() {
           title="Ventas del día"
           icon={<ShoppingBag className="h-4 w-4" />}
           value={`S/ ${formatMoney(ventasDia.monto)}`}
+          valuePrev={`S/ ${formatMoney(ventasDia.anterior)}`}
           variation={ventasDia.variacion}
+          diff={ventasDia.monto - ventasDia.anterior}
           subtitle="vs. ayer"
-          accent="from-emerald-500/20 to-emerald-500/5"
+          accent="from-emerald-500/25 via-emerald-300/15 to-emerald-500/8"
         />
         <MetricCard
           title="Ventas del mes"
           icon={<DollarSign className="h-4 w-4" />}
           value={`S/ ${formatMoney(ventasMes.monto)}`}
+          valuePrev={`S/ ${formatMoney(ventasMes.anterior)}`}
           variation={ventasMes.variacion}
+          diff={ventasMes.monto - ventasMes.anterior}
           subtitle="vs. mes anterior"
-          accent="from-blue-500/20 to-blue-500/5"
+          accent="from-blue-500/25 via-sky-500/10 to-cyan-500/8"
         />
         <CajaCard saldo={saldoCaja} medios={mediosCaja} />
         <MetricCard
           title="Clientes atendidos"
           icon={<Users className="h-4 w-4" />}
           value={clientesAtendidos.cantidad.toString()}
+          valuePrev={clientesAtendidos.anterior?.toString() ?? ""}
           variation={clientesAtendidos.variacion}
+          diff={clientesAtendidos.cantidad - (clientesAtendidos.anterior ?? 0)}
           subtitle="vs. ayer"
-          accent="from-purple-500/20 to-purple-500/5"
+          accent="from-fuchsia-400/20 via-purple-500/15 to-pink-500/10"
         />
       </section>
 
@@ -201,16 +203,16 @@ export default function Dashboard() {
         onValueChange={(v) => setTab(v as any)}
         className="space-y-6 relative z-10"
       >
-        <TabsList className="w-full justify-start gap-2 bg-muted/40 backdrop-blur">
+        <TabsList className="w-full justify-start gap-2 bg-muted/50 backdrop-blur">
           <TabsTrigger
             value="ventas"
-            className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary/20 data-[state=active]:to-primary/5"
+            className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary/30 data-[state=active]:to-fuchsia-400/10"
           >
             Análisis de Ventas
           </TabsTrigger>
-            <TabsTrigger
+          <TabsTrigger
             value="productos"
-            className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary/20 data-[state=active]:to-primary/5"
+            className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-400/20 data-[state=active]:to-cyan-400/10"
           >
             Productos
           </TabsTrigger>
@@ -220,14 +222,14 @@ export default function Dashboard() {
         <TabsContent value="ventas" className="space-y-6">
           <div className="grid gap-6 lg:grid-cols-7">
             {/* Gráfico */}
-            <Card className="col-span-4 border-border/60 bg-gradient-to-br from-background/70 via-background/40 to-background/30 backdrop-blur-xl relative overflow-hidden group">
+            <Card className="col-span-4 border-border/60 bg-gradient-to-br from-background/80 via-background/60 to-background/30 backdrop-blur-xl relative overflow-hidden group shadow-[0_10px_32px_-6px_rgba(139,92,246,0.08)]">
               <GlowLines />
               <CardHeader className="relative z-10">
                 <CardTitle className="flex items-center gap-2">
                   <Activity className="h-5 w-5 text-primary" />
                   Ritmo de Ventas (24h)
                 </CardTitle>
-                <CardDescription>Suma total por franja horaria</CardDescription>
+                <CardDescription>Comparativo horario - moderno y visual</CardDescription>
               </CardHeader>
               <CardContent className="pl-1 relative z-10">
                 {ventasPorHora.length === 0 ? (
@@ -243,7 +245,7 @@ export default function Dashboard() {
             </Card>
 
             {/* Últimas ventas */}
-            <Card className="col-span-3 bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/60 relative overflow-hidden">
+            <Card className="col-span-3 bg-gradient-to-br from-background/80 to-fuchsia-200/10 backdrop-blur-xl border-border/60 relative overflow-hidden shadow-[0_10px_32px_-6px_rgba(236,72,153,0.10)]">
               <DotsPattern />
               <CardHeader className="relative z-10">
                 <CardTitle className="flex items-center gap-2">
@@ -271,7 +273,7 @@ export default function Dashboard() {
                         </TableRow>
                       )}
                       {ultimasVentas.map((v, i) => (
-                        <TableRow key={i} className="hover:bg-muted/40 transition">
+                        <TableRow key={i} className="hover:bg-fuchsia-100/15 transition">
                           <TableCell className="font-medium">{v.boleta}</TableCell>
                           <TableCell>{v.cliente || "-"}</TableCell>
                           <TableCell className="text-right tabular-nums">
@@ -291,7 +293,7 @@ export default function Dashboard() {
         <TabsContent value="productos" className="space-y-6">
           <div className="grid gap-6 lg:grid-cols-7">
             {/* Más vendidos */}
-            <Card className="col-span-4 bg-gradient-to-br from-background/80 via-background/50 to-background/30 backdrop-blur-xl border-border/60 relative overflow-hidden">
+            <Card className="col-span-4 bg-gradient-to-br from-background/80 via-blue-300/10 to-fuchsia-100/10 backdrop-blur-xl border-border/60 relative overflow-hidden">
               <GlowLines />
               <CardHeader className="relative z-10">
                 <CardTitle className="flex items-center gap-2">
@@ -313,7 +315,7 @@ export default function Dashboard() {
                     <li key={i} className="space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gradient-to-r from-blue-500 via-fuchsia-500 to-pink-500 text-white font-medium shadow">
                             {i + 1}
                           </span>
                           <span className="font-medium">{p.nombre}</span>
@@ -324,7 +326,7 @@ export default function Dashboard() {
                       </div>
                       <div className="h-2 w-full bg-muted/60 rounded-full overflow-hidden relative">
                         <div
-                          className="h-full bg-gradient-to-r from-primary to-primary/60 animate-[pulse_6s_ease-in-out_infinite]"
+                          className="h-full bg-gradient-to-r from-fuchsia-500 via-blue-500 to-emerald-400 animate-[pulse_6s_ease-in-out_infinite]"
                           style={{ width: `${Math.min(100, p.porcentaje)}%` }}
                         />
                         <span className="absolute inset-0 text-[10px] flex items-center justify-center text-primary/90 font-medium">
@@ -340,7 +342,7 @@ export default function Dashboard() {
             {/* Column right */}
             <div className="col-span-3 grid gap-6">
               {/* Stock crítico + paginación */}
-              <Card className="bg-gradient-to-br from-red-500/10 to-red-500/0 backdrop-blur-xl border-red-500/30 relative overflow-hidden">
+              <Card className="bg-gradient-to-br from-red-500/10 to-fuchsia-500/5 backdrop-blur-xl border-red-500/30 relative overflow-hidden">
                 <CardHeader className="pb-2 relative z-10">
                   <CardTitle className="flex items-center gap-2">
                     <AlertCircle className="h-5 w-5 text-red-500" />
@@ -371,7 +373,7 @@ export default function Dashboard() {
               </Card>
 
               {/* Próximos a vencer + paginación */}
-              <Card className="bg-gradient-to-br from-amber-500/15 to-amber-500/0 backdrop-blur-xl border-amber-500/30 relative overflow-hidden">
+              <Card className="bg-gradient-to-br from-amber-500/20 to-fuchsia-300/10 backdrop-blur-xl border-amber-500/30 relative overflow-hidden">
                 <CardHeader className="pb-2 relative z-10">
                   <CardTitle className="flex items-center gap-2">
                     <Timer className="h-5 w-5 text-amber-500" />
@@ -428,16 +430,18 @@ export default function Dashboard() {
   )
 }
 
-/* -------------------- Componentes Auxiliares -------------------- */
+/* -------------------- Componentes Auxiliares Modernos -------------------- */
 interface MetricCardProps {
   title: string
   value: string
+  valuePrev?: string
   variation: number
+  diff?: number
   subtitle?: string
   icon: React.ReactNode
   accent?: string
 }
-function MetricCard({ title, value, variation, subtitle, icon, accent }: MetricCardProps) {
+function MetricCard({ title, value, valuePrev, variation, diff, subtitle, icon, accent }: MetricCardProps) {
   const positive = variation >= 0
   return (
     <Card className={cnGlass(accent)}>
@@ -445,12 +449,19 @@ function MetricCard({ title, value, variation, subtitle, icon, accent }: MetricC
         <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {title}
         </CardTitle>
-        <div className="p-1.5 rounded-md bg-gradient-to-br from-primary/20 to-primary/5 text-primary">
+        <div className="p-1.5 rounded-md bg-gradient-to-br from-primary/40 via-blue-500/20 to-fuchsia-500/10 text-primary shadow">
           {icon}
         </div>
       </CardHeader>
       <CardContent className="relative z-10 space-y-3">
-        <div className="text-2xl font-bold tracking-tight tabular-nums">{value}</div>
+        <div className="text-2xl font-bold tracking-tight tabular-nums flex items-end gap-2">
+          <span>{value}</span>
+          {valuePrev && (
+            <span className="text-xs text-muted-foreground/80 font-semibold">
+              <ArrowDown className="inline-block w-3 h-3 align-[-3px]" /> Prev: {valuePrev}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2 text-xs">
           <span
             className={positive ? "text-emerald-500 flex items-center gap-1" : "text-red-500 flex items-center gap-1"}
@@ -459,11 +470,21 @@ function MetricCard({ title, value, variation, subtitle, icon, accent }: MetricC
             {positive ? "+" : ""}
             {variation.toFixed(2)}%
           </span>
+          {diff !== undefined && (
+            <span className={diff >= 0 ? "text-emerald-500" : "text-red-500"}>
+              {diff === 0
+                ? "Igual"
+                : diff > 0
+                ? `Hoy +${formatMoney(diff)}`
+                : `Hoy ${formatMoney(diff)}`
+              }
+            </span>
+          )}
           {subtitle && <span className="text-muted-foreground">{subtitle}</span>}
         </div>
         <div className="h-1.5 w-full bg-muted/40 rounded-full overflow-hidden">
           <div
-            className={positive ? "h-full bg-gradient-to-r from-emerald-500 to-emerald-400" : "h-full bg-gradient-to-r from-red-500 to-red-400"}
+            className={positive ? "h-full bg-gradient-to-r from-emerald-500 to-emerald-400" : "h-full bg-gradient-to-r from-red-500 to-pink-500"}
             style={{ width: `${Math.min(100, Math.abs(variation))}%` }}
           />
         </div>
@@ -473,16 +494,17 @@ function MetricCard({ title, value, variation, subtitle, icon, accent }: MetricC
   )
 }
 
+/* ...Resto de componentes auxiliares igual que en tu código original... */
 function CajaCard({ saldo, medios }: { saldo: SaldoCaja; medios: { efectivoPct: number; yapePct: number } }) {
   const efectivoPct = isFinite(medios.efectivoPct) ? medios.efectivoPct : 0
   const yapePct = isFinite(medios.yapePct) ? medios.yapePct : 0
   return (
-    <Card className={cnGlass("from-cyan-500/20 to-cyan-500/5")}>
+    <Card className={cnGlass("from-cyan-500/25 via-cyan-300/15 to-cyan-500/8")}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 relative z-10">
         <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Saldo en caja
         </CardTitle>
-        <div className="p-1.5 rounded-md bg-gradient-to-br from-cyan-400/30 to-cyan-400/10 text-cyan-500">
+        <div className="p-1.5 rounded-md bg-gradient-to-br from-cyan-400/30 via-blue-300/10 to-fuchsia-500/10 text-cyan-500 shadow">
           <CreditCard className="h-4 w-4" />
         </div>
       </CardHeader>
@@ -600,17 +622,17 @@ function BackgroundFX() {
       aria-hidden
       className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
     >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_25%,hsl(var(--primary)/0.08),transparent_60%),radial-gradient(circle_at_80%_70%,hsl(var(--secondary)/0.08),transparent_55%)]" />
-      <div className="absolute -top-40 -right-40 h-[520px] w-[520px] rounded-full bg-gradient-to-br from-primary/15 to-transparent blur-3xl opacity-50 animate-pulse" />
-      <div className="absolute -bottom-40 -left-40 h-[520px] w-[520px] rounded-full bg-gradient-to-tr from-secondary/20 to-transparent blur-3xl opacity-40 animate-pulse" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_25%,#f0abfc22,transparent_60%),radial-gradient(circle_at_80%_70%,#38bdf822,transparent_55%)]" />
+      <div className="absolute -top-40 -right-40 h-[520px] w-[520px] rounded-full bg-gradient-to-br from-primary/15 to-fuchsia-500/15 blur-3xl opacity-50 animate-pulse" />
+      <div className="absolute -bottom-40 -left-40 h-[520px] w-[520px] rounded-full bg-gradient-to-tr from-fuchsia-400/15 to-blue-500/15 blur-3xl opacity-40 animate-pulse" />
     </div>
   )
 }
 
 function CardAura() {
   return (
-    <div className="pointer-events-none absolute inset-0 rounded-xl border border-white/5 [mask-image:linear-gradient(to_bottom,rgba(0,0,0,.4),rgba(0,0,0,.9))]">
-      <div className="absolute -inset-px rounded-xl bg-gradient-to-br from-white/5 via-white/0 to-white/5 opacity-60" />
+    <div className="pointer-events-none absolute inset-0 rounded-xl border border-white/10 [mask-image:linear-gradient(to_bottom,rgba(0,0,0,.2),rgba(0,0,0,.8))]">
+      <div className="absolute -inset-px rounded-xl bg-gradient-to-br from-white/5 via-white/0 to-fuchsia-500/10 opacity-70" />
     </div>
   )
 }
@@ -618,24 +640,24 @@ function CardAura() {
 function GlowLines() {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div className="absolute inset-y-0 left-1/2 w-px bg-gradient-to-b from-transparent via-primary/30 to-transparent animate-[pulse_5s_linear_infinite]" />
-      <div className="absolute -left-10 top-0 h-[140%] w-[140%] animate-[spin_30s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,hsl(var(--primary)/0.10),transparent_55%)]" />
+      <div className="absolute inset-y-0 left-1/2 w-px bg-gradient-to-b from-transparent via-fuchsia-400/40 to-transparent animate-[pulse_5s_linear_infinite]" />
+      <div className="absolute -left-10 top-0 h-[140%] w-[140%] animate-[spin_30s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#f0abfc22,transparent_55%)]" />
     </div>
   )
 }
 
 function DotsPattern() {
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden opacity-50">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,hsl(var(--foreground)/0.07)_1px,transparent_0)] [background-size:18px_18px]" />
+    <div className="pointer-events-none absolute inset-0 overflow-hidden opacity-60">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_2px_2px,#f472b650_1.5px,transparent_0)] [background-size:18px_18px]" />
     </div>
   )
 }
 
 function CornerGradient({ color }: { color: "red" | "amber" }) {
   const map: Record<string, string> = {
-    red: "from-red-500/30 to-transparent",
-    amber: "from-amber-400/40 to-transparent"
+    red: "from-red-500/40 to-fuchsia-500/0",
+    amber: "from-amber-400/50 to-fuchsia-300/0"
   }
   return (
     <div
@@ -645,15 +667,16 @@ function CornerGradient({ color }: { color: "red" | "amber" }) {
 }
 
 /* -------------------- Utilidades -------------------- */
-function formatMoney(v: number) {
+function formatMoney(v?: number) {
+  if (typeof v !== "number" || isNaN(v)) return "0.00"
   return v.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function cnGlass(accent?: string) {
   return [
-    "relative overflow-hidden rounded-xl border border-border/50 bg-background/60 backdrop-blur-xl",
+    "relative overflow-hidden rounded-xl border border-border/60 bg-background/70 backdrop-blur-xl",
     "before:absolute before:inset-0 before:bg-gradient-to-br before:opacity-90",
-    accent ? `before:${accent}` : "before:from-primary/15 before:to-primary/5",
-    "hover:shadow-[0_0_0_1px_hsl(var(--primary)/0.25),0_4px_30px_-5px_hsl(var(--primary)/0.25)] transition-shadow"
+    accent ? `before:${accent}` : "before:from-primary/20 before:to-fuchsia-400/10",
+    "hover:shadow-[0_0_0_2px_#f0abfc55,0_4px_30px_-5px_#f0abfc33] transition-shadow"
   ].join(" ")
 }
